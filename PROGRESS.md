@@ -12,5 +12,13 @@
 - 关键决策：headless Chrome 默认即提供软件 WebGL2（SwiftShader）且 Canvas2D 满帧 60fps；强制 `--use-angle=swiftshader` 会把 2D 拖到 4~18fps，故 run_all 采用默认标志，FPS 阈值设为 ≥30（实测 60）。
 - 下一步：阶段 1，把 app.js 拆成 ES Modules，行为与视觉保持不变。
 
+## 阶段 1：架构重构为 ES Modules
+- 完成时间：2026-11-03
+- 产出：app.js(1213行) 拆为 12 个模块（utils/state/storage、audio/{engine,beat,demo}、render/{canvas2d,renderer}、ui/{toast,autohide,dock}、main）。最大文件 canvas2d.js 528 行（<600）。删除旧 app.js/demo.js，index.html 改 module 脚本。
+- 通信：状态仓库订阅 + onBeat/onEnded 回调；渲染层只读分析帧，不改业务状态。
+- 测试：**PASS=28 FAIL=0 SKIP=14**（14 项 v2 特性按 features 能力位 SKIP）。三模式截图与旧版目视一致，fps=60，控制台无 error/warning、无 404。
+- 修复：多处模块把 `get`(按key取值) 误别名成 `getState` 导致启动抛错，已改为导入真正的 `getState`。
+- 下一步：阶段 2，五种模式/四套主题/全屏增强/播放列表/ID3 解析。
+
 ## 已知问题
 （暂无）
