@@ -1,0 +1,9 @@
+三处改动已完成，`node --check app.js && node --check demo.js` 通过。
+
+1. **favicon**：`index.html:9` 新增内联 SVG 圆环 data URI，浏览器不再请求 `/favicon.ico`。
+
+2. **dock 遮挡**：`app.js:225-240` 统一按「顶栏 54px 到 dock 顶部」的可用高度计算 `stageCY` 与 `stageUnit`；`centerY()`、环形、镜像、星系统一使用该中心/尺度。1440x900 下环形外圈约落在 y≈654，dock 顶部约 y≈699，不再被压住。移动端分支单独保留 `H*0.44` / `min(W,H)` / `H*0.49` / `H*0.32` 原值，竖屏效果不变。
+
+3. **触屏唤出控件**：现有逻辑已支持 —— `app.js:799-801` 在 `window` 上监听 `pointerdown` 与 `touchstart`（均调用 `wake()`），`ui-hidden` 状态下 dock/topbar 为 `pointer-events: none`，触摸画布可正常冒泡触发，无需改动。
+
+按要求到此结束。

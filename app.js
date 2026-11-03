@@ -222,16 +222,22 @@
     canvas.height = Math.round(H * DPR);
     g.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-    // 低高度视口按“顶栏到控制面板”的可用空间缩放
+    // 低高度视口与桌面视口都按「顶栏到控制面板」的可用空间布局，
+    // 避免环形/波形/星系主体被底部 dock 遮住；手机竖屏保持原有比例。
     isShort = H < 560 || (W > H && H < 820);
+    const bottomOffset = parseFloat(getComputedStyle(ui.dock).bottom) || 0;
+    const dockTop = H - bottomOffset - (ui.dock.offsetHeight || 0);
+    const avail = Math.max(120, dockTop - 54);
+
     if (isShort) {
-      const bottomOffset = parseFloat(getComputedStyle(ui.dock).bottom) || 0;
-      const dockTop = H - bottomOffset - ui.dock.offsetHeight;
-      const avail = Math.max(120, dockTop - 54);
       stageCY = 54 + avail * 0.5;
       stageUnit = Math.min(W * 0.9, (avail * 0.46) / 0.45);
-    } else {
+    } else if (isMobile) {
+      stageCY = H * 0.44;
       stageUnit = Math.min(W, H);
+    } else {
+      stageCY = 54 + avail * 0.5;
+      stageUnit = Math.min(W * 0.9, (avail * 0.46) / 0.45);
     }
 
     bgGrad = g.createRadialGradient(W * 0.5, H * 0.42, 0, W * 0.5, H * 0.42, Math.max(W, H) * 0.85);
@@ -289,7 +295,7 @@
   }
 
   function centerY() {
-    return isShort ? stageCY : H * (isMobile ? 0.44 : 0.47);
+    return stageCY;
   }
 
   function spawnBurst(count) {
@@ -340,7 +346,7 @@
   function drawRing() {
     const cx = W / 2;
     const cy = centerY();
-    const unit = isShort ? stageUnit : Math.min(W, H);
+    const unit = stageUnit;
     const baseR = unit * (isMobile ? 0.18 : 0.15) * (1 + beatPulse * 0.06);
     const maxLen = unit * 0.25;
     const rot = time * 0.09;
@@ -446,12 +452,14 @@
 
   // ===== 绘制：模式二 · 镜像柱状波形 =====
   function drawMirror() {
-    const midY = isShort ? stageCY : H * 0.49;
+    const midY = isShort || !isMobile ? stageCY : H * 0.49;
     const usable = Math.min(W * 0.92, 1180);
     const x0 = (W - usable) / 2;
     const slot = usable / BARS;
     const barW = Math.max(2, slot * 0.52);
-    const maxH = (isShort ? Math.min(stageUnit * 0.4, 290) : Math.min(H * 0.32, 290)) *
+    const maxH = (isShort || !isMobile
+      ? Math.min(stageUnit * 0.4, 290)
+      : Math.min(H * 0.32, 290)) *
       (1 + beatPulse * 0.035);
     const segBars = Math.ceil(BARS / HUE_SEGMENTS);
 
@@ -581,7 +589,7 @@
   function drawGalaxy(dt) {
     const cx = W / 2;
     const cy = centerY();
-    const unit = isShort ? stageUnit : Math.min(W, H);
+    const unit = stageUnit;
     const radius = unit * 0.46;
     const rotSpeed = 0.1 + energyAvg * 0.9;
 
