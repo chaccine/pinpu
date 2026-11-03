@@ -4,9 +4,12 @@
 
 import { TAU, clamp, hueOf, isMobile } from '../utils.js';
 import { getState } from '../state.js';
+import { THEMES } from '../theme.js';
 
 const HUE_SEGMENTS = 12;   // 色相分段合批
 const SPRITE_COUNT = 18;   // 预渲染发光贴图数量
+
+const wrapMod = (x, w) => ((x % w) + w) % w;
 
 export const MODES_2D = [
   { key: 'ring', label: '环形频谱' },
@@ -29,6 +32,7 @@ export class Canvas2DRenderer {
 
     this.mode = 0;
     this.time = 0;
+    this.theme = THEMES[0];
     this.galaxy = [];
     this.sparks = [];
     this.sprites = [];
@@ -41,6 +45,28 @@ export class Canvas2DRenderer {
   }
 
   get barsCount() { return this.engine.barsCount; }
+
+  // 主题：保存插值后的主题对象；背景渐变随之重建
+  setTheme(theme) {
+    this.theme = theme || THEMES[0];
+    this.rebuildBgGradient();
+  }
+
+  // 将引擎漂移色相映射进当前主题的色相窗口，得到绘制基准色相
+  baseHue() {
+    const t = this.theme;
+    return t.hue + wrapMod(this.engine.frame.hueBase - 202, t.window);
+  }
+
+  rebuildBgGradient() {
+    if (!this.W || !this.H) return;
+    const g = this.g;
+    const bg = this.theme.bg;
+    this.bgGrad = g.createRadialGradient(this.W * 0.5, this.H * 0.42, 0, this.W * 0.5, this.H * 0.42, Math.max(this.W, this.H) * 0.85);
+    this.bgGrad.addColorStop(0, bg[0]);
+    this.bgGrad.addColorStop(0.55, bg[1]);
+    this.bgGrad.addColorStop(1, bg[2]);
+  }
 
   // ---- 资源构建 ----
   buildSprites() {
@@ -114,10 +140,7 @@ export class Canvas2DRenderer {
       this.stageUnit = Math.min(W * 0.9, (avail * 0.46) / 0.45);
     }
 
-    this.bgGrad = this.g.createRadialGradient(W * 0.5, H * 0.42, 0, W * 0.5, H * 0.42, Math.max(W, H) * 0.85);
-    this.bgGrad.addColorStop(0, '#0a1222');
-    this.bgGrad.addColorStop(0.55, '#05070e');
-    this.bgGrad.addColorStop(1, '#03040a');
+    this.rebuildBgGradient();
 
     this.buildGalaxy();
     this.maxSparks = Math.round((isMobile() ? 80 : 160) * this.quality.particleScale);
@@ -183,7 +206,7 @@ export class Canvas2DRenderer {
 
   drawBackdrop() {
     const g = this.g, W = this.W, H = this.H;
-    const hueBase = this.engine.frame.hueBase;
+    const hueBase = this.baseHue();
     const beatPulse = this.engine.frame.beatPulse;
     g.setTransform(this.DPR, 0, 0, this.DPR, 0, 0);
     g.globalCompositeOperation = 'source-over';
@@ -219,7 +242,9 @@ export class Canvas2DRenderer {
 
   drawRing() {
     const g = this.g;
-    const { bars, hueBase, beatPulse } = this.engine.frame;
+    const { bars, beatPulse } = this.engine.frame;
+    const hueBase = this.baseHue();
+    const spread = this.theme.spread;
     const BARS = bars.length;
     const cx = this.W / 2, cy = this.centerY(), unit = this.stageUnit;
     const mobile = isMobile();
@@ -264,7 +289,7 @@ export class Canvas2DRenderer {
         g.moveTo(ca * r0, sa * r0);
         g.lineTo(ca * r1, sa * r1);
       }
-      const h = hueOf(hueBase + seg * 26);
+      const h = hueOf(hueBase + seg * spread);
       const glowMul = this.quality.glow;
       g.strokeStyle = `hsla(${h}, 100%, 55%, ${0.055 * glowMul})`;
       g.lineWidth = lineWidth * 4.5;
@@ -314,7 +339,9 @@ export class Canvas2DRenderer {
 
   drawMirror() {
     const g = this.g;
-    const { bars, hueBase, beatPulse, wave } = this.engine.frame;
+    const { bars, beatPulse, wave } = this.engine.frame;
+    const hueBase = this.baseHue();
+    const spread = this.theme.spread;
     const BARS = bars.length;
     const playing = getState().playing;
     const mobile = isMobile();
@@ -344,7 +371,7 @@ export class Canvas2DRenderer {
       const from = seg * segBars;
       const to = Math.min(BARS, from + segBars);
       if (from >= to) continue;
-      const hcol = hueOf(hueBase + seg * 26);
+      const hcol = hueOf(hueBase + seg * spread);
       const glowMul = this.quality.glow;
 
       for (let layer = 0; layer < 2; layer++) {
@@ -443,7 +470,8 @@ export class Canvas2DRenderer {
 
   drawGalaxy(dt) {
     const g = this.g;
-    const { bars, hueBase, beatPulse, energy } = this.engine.frame;
+    const { bars, beatPulse, energy } = this.engine.frame;
+    const hueBase = this.baseHue();
     const BARS = bars.length;
     const cx = this.W / 2, cy = this.centerY(), unit = this.stageUnit;
     const radius = unit * 0.46;

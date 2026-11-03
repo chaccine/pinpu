@@ -8,6 +8,8 @@ import { createRenderer } from './render/renderer.js';
 import { createToast } from './ui/toast.js';
 import { createAutoHide } from './ui/autohide.js';
 import { initDock } from './ui/dock.js';
+import { initThemePanel } from './ui/theme-panel.js';
+import { ThemeController, applyThemeCSS, THEMES } from './theme.js';
 
 // 阶段1 仅有 3 种模式；阶段2 扩展为 5
 const MODE_COUNT = 3;
@@ -40,6 +42,15 @@ const engine = new AudioEngine();
 const renderer = createRenderer(canvas, engine);
 const toast = createToast($('#toast'));
 const autohide = createAutoHide();
+
+// 主题：400ms 平滑过渡，逐帧驱动渲染器着色与 CSS 变量
+const themeCtrl = new ThemeController((interp) => {
+  renderer.setTheme(interp);
+  applyThemeCSS(interp);
+});
+renderer.setTheme(THEMES[0]);
+applyThemeCSS(THEMES[0]);
+features.themes = true;
 
 // 模式变化 → 通知渲染器（渲染层只读状态，不改业务状态）
 subscribe('mode', (mode) => renderer.setMode(mode));
@@ -108,10 +119,21 @@ const actions = {
     else if (res === 'error') toast('播放失败，请重试');
   },
   toggleFullscreen,
+  setTheme(id) {
+    themeCtrl.setTheme(id);
+    setState({ theme: id });
+  },
+  cycleTheme() {
+    const id = themeCtrl.cycle();
+    setState({ theme: id });
+    const t = THEMES.find((x) => x.id === id);
+    toast(`主题：${t ? t.label : id}`);
+  },
 };
 
-// ---- 装配 dock ----
+// ---- 装配 dock 与主题面板 ----
 const dock = initDock({ engine, actions, autohide });
+initThemePanel({ setTheme: (id) => actions.setTheme(id) });
 
 // ---- 键盘快捷键（阶段3 迁移到统一配置表）----
 window.addEventListener('keydown', (e) => {
@@ -120,6 +142,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Space') { e.preventDefault(); actions.togglePlay(); }
   else if (e.key === '1' || e.key === '2' || e.key === '3') actions.setMode(Number(e.key) - 1);
   else if (e.key === 'f' || e.key === 'F') actions.toggleFullscreen();
+  else if (e.key === 't' || e.key === 'T') actions.cycleTheme();
 });
 
 // ---- 拖拽载入（阶段2 扩展为多文件/文件夹）----
@@ -179,6 +202,7 @@ function frame(ts) {
   }
 
   engine.update(dt, ts / 1000);
+  themeCtrl.update(dt);
   renderer.render(dt);
   dock.updateTransport();
 }
@@ -197,6 +221,7 @@ function exposeDebugApi() {
     get spectrum() { return engine.spectrum; },
     // v2 扩展字段
     get theme() { return getState().theme; },
+    get themes() { return THEMES.map((t) => t.id); },
     get renderer() { return renderer.kind; },
     get playlistLength() { return getState().playlistLength; },
     get currentIndex() { return getState().currentIndex; },
