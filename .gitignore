@@ -1,2 +1,5 @@
 shots/
 node_modules/
+test/last_run.txt
+__pycache__/
+*.pyc
