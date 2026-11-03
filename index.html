@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#04060b">
+  <meta name="description" content="纯前端音乐频谱可视化，支持本地音频、麦克风与合成演示曲目。">
+  <title>频谱 · 音乐可视化</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="stage" aria-label="音乐频谱可视化画布"></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <header class="topbar ui">
+    <div class="brand">
+      <span class="pulse-dot" aria-hidden="true"></span>
+      <h1>频谱</h1>
+      <span class="tagline">音乐可视化</span>
+    </div>
+    <div class="top-actions">
+      <span class="source-tag" id="sourceTag">未连接</span>
+      <button class="icon-btn" id="btnFullscreen" type="button" title="全屏（F）" aria-label="切换全屏">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <p class="hint" id="hint">拖入音频文件，或点击下方「演示曲目」开始</p>
+
+  <section class="dock ui" id="dock" aria-label="控制面板">
+    <div class="dock-row sources">
+      <button class="chip chip-demo" id="btnDemo" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 18V6l10-2v12" />
+          <circle cx="6.5" cy="18" r="2.5" />
+          <circle cx="16.5" cy="16" r="2.5" />
+        </svg>
+        <span>演示曲目</span>
+      </button>
+      <button class="chip" id="btnFile" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 16V4M7 9l5-5 5 5M5 20h14" />
+        </svg>
+        <span>本地音频</span>
+      </button>
+      <button class="chip" id="btnMic" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="9" y="3" width="6" height="11" rx="3" />
+          <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+        </svg>
+        <span>麦克风</span>
+      </button>
+      <input id="fileInput" type="file" accept="audio/*" hidden>
+    </div>
+
+    <div class="dock-row transport">
+      <button class="play-btn" id="btnPlay" type="button" aria-label="播放">
+        <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z" /></svg>
+        <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.6v14H7zM13.4 5H17v14h-3.6z" /></svg>
+      </button>
+      <span class="time" id="timeNow">0:00</span>
+      <div class="range-wrap">
+        <input id="progress" class="progress" type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度">
+      </div>
+      <span class="time" id="timeTotal">0:00</span>
+    </div>
+
+    <div class="dock-row mode-row" role="group" aria-label="视觉模式">
+      <button class="mode is-active" type="button" data-mode="0">环形频谱</button>
+      <button class="mode" type="button" data-mode="1">镜像波形</button>
+      <button class="mode" type="button" data-mode="2">粒子星系</button>
+    </div>
+  </section>
+
+  <div class="drop-veil" id="dropVeil" aria-hidden="true">
+    <div class="drop-card">
+      <strong>松手即可载入音频</strong>
+      <span>支持 MP3 / WAV / OGG / M4A 等格式</span>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="demo.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
