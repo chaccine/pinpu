@@ -256,11 +256,15 @@ async def exists(page, sel):
     return await page.evaluate(f"!!document.querySelector({json.dumps(sel)})")
 
 
+async def has_feature(page, name):
+    return await page.evaluate(
+        f"!!(window.__pinpu && __pinpu.features && __pinpu.features[{json.dumps(name)}])")
+
+
 async def v2_theme_checks(h):
     page = h.page
-    has_theme = await page.evaluate("typeof (__pinpu&&__pinpu.theme)!=='undefined' && !!__pinpu.theme")
-    if not has_theme:
-        h.skip("主题系统", "__pinpu.theme 未定义")
+    if not await has_feature(page, "themes"):
+        h.skip("主题系统", "features.themes 未启用")
         return
     await page.goto(BASE)
     await page.click("#btnDemo")
@@ -297,9 +301,8 @@ async def v2_modes_checks(h):
 
 async def v2_playlist_checks(h, is_mobile):
     page = h.page
-    has_pl = await page.evaluate("typeof (__pinpu&&__pinpu.playlistLength)!=='undefined'")
-    if not has_pl:
-        h.skip("播放列表", "__pinpu.playlistLength 未定义")
+    if not await has_feature(page, "playlist"):
+        h.skip("播放列表", "features.playlist 未启用")
         return
     await page.goto(BASE)
     files = [os.path.join(FIX, f) for f in ("id3v23_cn.mp3", "id3v24_utf8.mp3", "notag.mp3", "tone.wav")]
@@ -319,8 +322,8 @@ async def v2_playlist_checks(h, is_mobile):
 
 async def v2_id3_checks(h):
     page = h.page
-    if not await page.evaluate("typeof (__pinpu&&__pinpu.meta)!=='undefined'"):
-        h.skip("ID3显示", "__pinpu.meta 未定义")
+    if not await has_feature(page, "id3"):
+        h.skip("ID3显示", "features.id3 未启用")
         return
     await page.goto(BASE)
     f = os.path.join(FIX, "id3v23_cn.mp3")
@@ -334,8 +337,8 @@ async def v2_id3_checks(h):
 
 async def v2_renderer_checks(h):
     page = h.page
-    if not await page.evaluate("typeof (__pinpu&&__pinpu.renderer)!=='undefined'"):
-        h.skip("渲染器", "__pinpu.renderer 未定义")
+    if not await has_feature(page, "webgl"):
+        h.skip("渲染器", "features.webgl 未启用")
         return
     await page.goto(BASE + "?renderer=2d")
     await page.wait_for_timeout(800)
@@ -349,8 +352,8 @@ async def v2_renderer_checks(h):
 
 async def v2_persist_checks(h):
     page = h.page
-    if not await page.evaluate("typeof (__pinpu&&__pinpu.theme)!=='undefined'"):
-        h.skip("持久化", "主题未实现")
+    if not await has_feature(page, "persist"):
+        h.skip("持久化", "features.persist 未启用")
         return
     await page.goto(BASE)
     await page.wait_for_timeout(500)
@@ -370,9 +373,8 @@ async def v2_persist_checks(h):
 
 async def v2_shortcut_help(h):
     page = h.page
-    if not await exists(page, "#helpPanel") and not await page.evaluate(
-            "()=>!!document.querySelector('[data-help]')"):
-        h.skip("快捷键帮助", "帮助浮层未实现")
+    if not await has_feature(page, "help"):
+        h.skip("快捷键帮助", "features.help 未启用")
         return
     await page.goto(BASE)
     await page.wait_for_timeout(400)
