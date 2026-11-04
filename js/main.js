@@ -18,6 +18,7 @@ import { initDrop } from './drop.js';
 import { readLrcFile, isLrcFile, bindLrcFiles } from './lyrics/source.js';
 import { ThemeController, applyThemeCSS, THEMES } from './theme.js';
 import { initCoverTheme } from './coverTheme.js';
+import { BUILTIN_SONGS, fetchBuiltinFile } from './builtin.js';
 import { SHORTCUTS } from './shortcuts.js';
 import { settings, updateSettings, resetSettings, barsCountFor, DEFAULT_SETTINGS } from './settings.js';
 import { createQualityManager } from './quality.js';
@@ -82,8 +83,7 @@ const lyrics = initLyrics({
 const autohide = createAutoHide();
 setState({ renderer: renderer.kind });
 
-let settingsPanel = null;
-let qualityManager = null;
+let settingsPanel = null, qualityManager = null, builtinBusy = false;
 
 // ---- 主题：400ms 平滑过渡，逐帧驱动渲染器着色与 CSS 变量 ----
 const themeCtrl = new ThemeController((interp) => {
@@ -256,6 +256,18 @@ const actions = {
   async startDemo() {
     const ok = await engine.startDemo();
     toast(ok ? '演示曲目 · 120 BPM' : '音频初始化失败');
+  },
+  async playBuiltin(id) {
+    const song = BUILTIN_SONGS.find((s) => s.id === id);
+    const i = song ? playlist.items.findIndex((it) => it.name === song.fileName && it.file) : -1;
+    if (i >= 0) { await playlist.playIndex(i); return; }
+    if (!song || builtinBusy) return;
+    builtinBusy = true;
+    toast('正在加载内置曲目…');
+    const file = await fetchBuiltinFile(song).catch(() => null);
+    builtinBusy = false;
+    if (file) await actions.handleFiles([file]);
+    else toast('内置曲目加载失败，请检查网络');
   },
   async handleFile(f) {
     return actions.handleFiles([f]);
@@ -449,14 +461,7 @@ const dockEl = $('#dock');
 if (window.ResizeObserver && dockEl) new ResizeObserver(() => resize()).observe(dockEl);
 
 // ---- 主循环：页面不可见/失焦时暂停；暂停播放时降帧；播放中自适应画质 ----
-let lastTs = 0;
-let lastWork = 0;
-let fpsAcc = 0;
-let fpsFrames = 0;
-let fps = 60;
-let qualityAcc = 0;
-let running = false;
-let rafId = 0;
+let lastTs = 0, lastWork = 0, fpsAcc = 0, fpsFrames = 0, fps = 60, qualityAcc = 0, running = false, rafId = 0;
 
 function frame(ts) {
   if (!running) return;
@@ -556,6 +561,7 @@ function exposeDebugApi() {
     prev: () => actions.prev(),
     togglePlay: () => actions.togglePlay(),
     setLoopMode: (id) => { playlist.setLoopMode(id); return getState().loopMode; },
+    playBuiltin: (id) => actions.playBuiltin(id),
     loadLyrics: (text) => lyrics.loadLrc(text),
     clearLyrics: () => lyrics.clear(),
     setShowLyrics: (v) => {

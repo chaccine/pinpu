@@ -35,7 +35,7 @@
     </div>
   </header>
 
-  <p class="hint" id="hint">拖入音频文件，或点击下方「演示曲目」开始</p>
+  <p class="hint" id="hint">拖入音频文件，或点击下方「演示曲目」/「内置曲目」开始</p>
 
   <section class="dock ui" id="dock" aria-label="控制面板">
     <div class="dock-row sources">
@@ -46,6 +46,14 @@
           <circle cx="16.5" cy="16" r="2.5" />
         </svg>
         <span>演示曲目</span>
+      </button>
+      <button class="chip" id="btnBuiltin" type="button" aria-label="播放内置曲目 Color Your Night">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11.5" cy="12.5" r="8" />
+          <circle cx="11.5" cy="12.5" r="2.2" />
+          <path d="M18.5 3.5v4M16.5 5.5h4" />
+        </svg>
+        <span>内置曲目</span>
       </button>
       <button class="chip" id="btnFile" type="button" aria-label="选择本地音频文件">
         <svg viewBox="0 0 24 24" aria-hidden="true">

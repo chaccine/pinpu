@@ -3,6 +3,7 @@
 
 import { $, $$, clamp, formatTime, setText } from '../utils.js';
 import { subscribe, getState, set as setState } from '../state.js';
+import { BUILTIN_SONGS } from '../builtin.js';
 
 const SOURCE_NAMES = { none: '未连接', demo: '演示曲目', file: '本地音频', mic: '麦克风' };
 
@@ -12,6 +13,7 @@ export function initDock({ engine, actions, autohide, playlist = null }) {
     prev: $('#btnPrev'),
     next: $('#btnNext'),
     demo: $('#btnDemo'),
+    builtin: $('#btnBuiltin'),
     file: $('#btnFile'),
     mic: $('#btnMic'),
     fileInput: $('#fileInput'),
@@ -46,6 +48,9 @@ export function initDock({ engine, actions, autohide, playlist = null }) {
     ui.demo.classList.toggle('is-active', source === 'demo');
     ui.file.classList.toggle('is-active', source === 'file');
     ui.mic.classList.toggle('is-active', source === 'mic');
+    const cur = playlist && playlist.current;
+    const onBuiltin = source === 'file' && cur && BUILTIN_SONGS.some((s) => s.fileName === cur.name);
+    if (ui.builtin) ui.builtin.classList.toggle('is-active', !!onBuiltin);
     ui.timeTotal.classList.toggle('wide', source === 'demo');
     document.body.classList.toggle('started', source !== 'none');
     syncNowPlaying();
@@ -115,6 +120,7 @@ export function initDock({ engine, actions, autohide, playlist = null }) {
   }
 
   subscribe('source', syncSource);
+  subscribe('currentIndex', syncSource);
   subscribe('playing', syncPlaying);
   subscribe('mode', syncMode);
   subscribe('volume', syncVolume);
@@ -216,6 +222,7 @@ export function initDock({ engine, actions, autohide, playlist = null }) {
 
   // ---- 按钮事件 ----
   ui.demo.addEventListener('click', () => actions.startDemo());
+  if (ui.builtin) ui.builtin.addEventListener('click', () => actions.playBuiltin('color-your-night'));
   ui.file.addEventListener('click', () => { ui.fileInput.value = ''; ui.fileInput.click(); });
   ui.fileInput.addEventListener('change', () => {
     const files = ui.fileInput.files;

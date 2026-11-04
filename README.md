@@ -6,7 +6,7 @@
 
 - **五种视觉模式**：环形频谱、镜像波形、粒子星系、律动封面环、3D 波形地形。
 - **五套配色主题**：霓虹、落日、冰蓝、极光，以及第五项「封面」——从当前专辑封面提取主色动态生成；无封面时自动回退到上一个静态主题。
-- **三种音源**：内置 120 BPM 合成演示曲、本地音频（MP3 / WAV / OGG / M4A 等）、麦克风输入。
+- **四种音源**：内置 120 BPM 合成演示曲、内置曲目（Color Your Night，按需下载）、本地音频（MP3 / WAV / OGG / M4A 等）、麦克风输入。
 - **播放列表**：多文件选择、文件夹/多文件拖拽递归加入、拖动排序、单曲删除、清空、点击切歌；顺序 / 列表循环 / 单曲循环 / 随机四种播放模式。
 - **ID3 标签**：自研 ID3v2.2/2.3/2.4（含中文编码与封面）及 FLAC Vorbis Comment/PICTURE 解析；损坏文件安全降级为文件名。
 - **WebGL 加速**：粒子星系与 3D 地形支持 GPU 渲染（WebGL2 → WebGL1 → Canvas2D 自动降级）；`?renderer=2d` 可强制 2D；上下文丢失自动恢复/降级。
@@ -16,6 +16,12 @@
 - **桌面与移动端**：全屏 / iOS 沉浸模式、界面自动淡出、横屏两行布局、模式按钮自适应不溢出、触屏拖动排序。
 - **无障碍**：按钮 aria-label / aria-pressed、键盘 Tab 焦点、`prefers-reduced-motion` 降低粒子与镜头摇摆。
 - **性能**：页面隐藏或失焦暂停渲染、暂停时限帧、渐变缓存、零逐帧分配、30 次切歌无线性内存增长。
+
+## 内置曲目
+
+点击 dock 中的「内置曲目」后，页面才会按需下载约 9MB 的 `assets/music/color-your-night.mp3`（懒加载，页面初始加载不会请求该文件）；下载完成后会像本地文件一样加入播放列表，并解析 ID3 标题、歌手与封面，封面环与封面主题随之生效。同一会话内重复播放不会再次下载。
+
+曲目：**Color Your Night**（Persona 3 Reload OST）。版权归原权利人所有，仅供个人演示使用，如有侵权请联系删除。
 
 ## 本地运行
 
@@ -81,6 +87,7 @@ pinpu3/
 │   ├── shortcuts.js           快捷键单一配置表（驱动按键与帮助浮层）
 │   ├── utils.js               通用工具（色相、格式化、媒体查询）
 │   ├── playlist.js            播放列表模型、循环/随机、Media Session、封面 URL 生命周期
+│   ├── builtin.js             内置曲目清单、按需下载、File 转换与会话缓存
 │   ├── audio/
 │   │   ├── engine.js          AudioContext、分析器、音源切换、音量、节拍检测接线
 │   │   ├── beat.js            低频能量节拍检测
@@ -140,4 +147,4 @@ pinpu3/
 页面暴露 `window.__pinpu` 供自动化验收：
 
 - 只读：`mode`、`beats`、`playing`、`source`、`fps`、`theme`、`renderer`、`playlistLength`、`currentIndex`、`meta`、`loopMode`、`volume`、`muted`、`quality`、`webglLevel`、`settings`、`features`
-- 方法：`setMode(i)`、`setTheme(id)`、`next()`、`prev()`、`togglePlay()`、`setLoopMode(id)`
+- 方法：`setMode(i)`、`setTheme(id)`、`next()`、`prev()`、`togglePlay()`、`setLoopMode(id)`、`playBuiltin(id)`

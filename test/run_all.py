@@ -22,6 +22,7 @@ from harness import (
 )
 from autoswitch_checks import v2_autoswitch_checks
 from cover_theme_checks import v2_cover_theme_checks
+from builtin_checks import v2_builtin_checks
 
 
 # ---------------------------------------------------------------------------
@@ -528,6 +529,7 @@ async def run_context(browser, is_mobile, rep):
     await v2_lyrics_checks(h)
     await v2_renderer_checks(h)
     await v2_autoswitch_checks(h)
+    await v2_builtin_checks(h)
     await v2_persist_checks(h)
     await v2_shortcut_help(h)
     await v2_autohide_checks(h, is_mobile)
