@@ -35,20 +35,42 @@ export function createAutoHide() {
     return [evt, fn];
   });
 
+  // 面板悬停/聚焦时抑制自动隐藏（事件委托，覆盖动态创建的浮层）
+  const isUi = (el) => !!(el && el.closest && el.closest('.ui'));
+  const onPointerOver = (e) => { if (isUi(e.target)) setSuppressed(true); };
+  const onPointerOut = (e) => { if (!isUi(e.relatedTarget)) setSuppressed(false); };
+  const onFocusIn = (e) => { if (isUi(e.target)) setSuppressed(true); };
+  const onFocusOut = () => {
+    setTimeout(() => { if (!isUi(document.activeElement)) setSuppressed(false); }, 0);
+  };
+  document.addEventListener('pointerover', onPointerOver, { passive: true });
+  document.addEventListener('pointerout', onPointerOut, { passive: true });
+  document.addEventListener('focusin', onFocusIn);
+  document.addEventListener('focusout', onFocusOut);
+
   // 播放状态变化时重新计时或立即唤出
   subscribe('playing', (playing) => {
     if (playing) armIdle(); else wake();
   });
+
+  function setSuppressed(v) {
+    suppressed = !!v;
+    if (suppressed) { clearTimeout(idleTimer); body.classList.remove('ui-hidden'); } else armIdle();
+  }
 
   return {
     armIdle,
     wake,
     hidden,
     setSeeking(v) { seeking = !!v; if (v) wake(); else armIdle(); },
-    setSuppressed(v) { suppressed = !!v; if (v) wake(); else armIdle(); },
+    setSuppressed,
     destroy() {
       clearTimeout(idleTimer);
       bound.forEach(([evt, fn]) => window.removeEventListener(evt, fn));
+      document.removeEventListener('pointerover', onPointerOver);
+      document.removeEventListener('pointerout', onPointerOut);
+      document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('focusout', onFocusOut);
     },
   };
 }

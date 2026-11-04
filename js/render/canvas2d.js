@@ -2,9 +2,10 @@
 /* 只读音频引擎的分析帧 frame 与应用状态，不修改业务状态；粒子/星系/贴图等视觉资源自持。 */
 /* 节拍到来时由外部调用 onBeat() 触发爆发粒子，保持与旧版一致的观感。 */
 
-import { TAU, clamp, hueOf, isMobile } from '../utils.js';
+import { TAU, clamp, hueOf, isMobile, prefersReducedMotion } from '../utils.js';
 import { getState } from '../state.js';
 import { THEMES } from '../theme.js';
+import { drawCoverRing, drawTerrain } from './modes-extra.js';
 
 const HUE_SEGMENTS = 12;   // 色相分段合批
 const SPRITE_COUNT = 18;   // 预渲染发光贴图数量
@@ -15,6 +16,8 @@ export const MODES_2D = [
   { key: 'ring', label: '环形频谱' },
   { key: 'mirror', label: '镜像波形' },
   { key: 'galaxy', label: '粒子星系' },
+  { key: 'coverring', label: '律动封面环' },
+  { key: 'terrain', label: '3D波形地形' },
 ];
 
 export class Canvas2DRenderer {
@@ -33,6 +36,7 @@ export class Canvas2DRenderer {
     this.mode = 0;
     this.time = 0;
     this.theme = THEMES[0];
+    this.coverImg = null;
     this.galaxy = [];
     this.sparks = [];
     this.sprites = [];
@@ -40,6 +44,7 @@ export class Canvas2DRenderer {
 
     // 画质（阶段3自适应）：粒子/柱条/发光/DPR 上限的缩放因子
     this.quality = { dprCap: 2, particleScale: 1, glow: 1, barsScale: 1 };
+    this.reducedMotion = prefersReducedMotion();
 
     this.buildSprites();
   }
@@ -50,6 +55,15 @@ export class Canvas2DRenderer {
   setTheme(theme) {
     this.theme = theme || THEMES[0];
     this.rebuildBgGradient();
+  }
+
+  // 封面图（律动封面环用）：传入 objectURL 或 null
+  setCover(url) {
+    if (!url) { this.coverImg = null; return; }
+    const img = new Image();
+    img.onload = () => { this.coverImg = img; };
+    img.onerror = () => { this.coverImg = null; };
+    img.src = url;
   }
 
   // 将引擎漂移色相映射进当前主题的色相窗口，得到绘制基准色相
@@ -97,6 +111,7 @@ export class Canvas2DRenderer {
     const mobile = isMobile();
     let count = mobile ? 180 : clamp(Math.round(area / 2600), 220, 620);
     count = Math.round(count * this.quality.particleScale);
+    if (this.reducedMotion) count = Math.round(count * 0.4);
     this.galaxy = [];
     for (let i = 0; i < count; i++) {
       const r = 0.12 + Math.pow(Math.random(), 0.65) * 0.88;
@@ -143,7 +158,8 @@ export class Canvas2DRenderer {
     this.rebuildBgGradient();
 
     this.buildGalaxy();
-    this.maxSparks = Math.round((isMobile() ? 80 : 160) * this.quality.particleScale);
+    this.maxSparks = Math.round((isMobile() ? 80 : 160) * this.quality.particleScale
+      * (this.reducedMotion ? 0.4 : 1));
   }
 
   centerY() { return this.stageCY; }
@@ -201,7 +217,9 @@ export class Canvas2DRenderer {
     this.drawBackdrop();
     if (this.mode === 0) this.drawRing();
     else if (this.mode === 1) this.drawMirror();
-    else this.drawGalaxy(dt);
+    else if (this.mode === 2) this.drawGalaxy(dt);
+    else if (this.mode === 3) drawCoverRing(this, dt);
+    else drawTerrain(this, dt);
   }
 
   drawBackdrop() {

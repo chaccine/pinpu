@@ -6,23 +6,33 @@ import { subscribe, getState, set as setState } from '../state.js';
 
 const SOURCE_NAMES = { none: '未连接', demo: '演示曲目', file: '本地音频', mic: '麦克风' };
 
-export function initDock({ engine, actions, autohide }) {
+export function initDock({ engine, actions, autohide, playlist = null }) {
   const ui = {
     play: $('#btnPlay'),
+    prev: $('#btnPrev'),
+    next: $('#btnNext'),
     demo: $('#btnDemo'),
     file: $('#btnFile'),
     mic: $('#btnMic'),
     fileInput: $('#fileInput'),
     fullscreen: $('#btnFullscreen'),
     progress: $('#progress'),
+    progressTip: $('#progressTip'),
+    rangeWrap: $('#progress') ? $('#progress').parentElement : null,
     timeNow: $('#timeNow'),
     timeTotal: $('#timeTotal'),
+    volume: $('#volume'),
+    mute: $('#btnMute'),
     sourceTag: $('#sourceTag'),
+    nowPlaying: $('#nowPlaying'),
+    npCover: $('#npCover'),
+    npTitle: $('#npTitle'),
     modeBtns: $$('.mode'),
   };
 
   let seeking = false;
   let painted = -1;
+  let paintedBuffered = -1;
 
   function paintProgress(value) {
     const pct = clamp(value / 10, 0, 100);
@@ -38,6 +48,7 @@ export function initDock({ engine, actions, autohide }) {
     ui.mic.classList.toggle('is-active', source === 'mic');
     ui.timeTotal.classList.toggle('wide', source === 'demo');
     document.body.classList.toggle('started', source !== 'none');
+    syncNowPlaying();
   }
 
   function syncPlaying(playing) {
@@ -53,9 +64,62 @@ export function initDock({ engine, actions, autohide }) {
     });
   }
 
+  function syncVolume() {
+    const v = Math.round((getState().muted ? 0 : getState().volume) * 100);
+    if (Number(ui.volume.value) !== v) ui.volume.value = String(v);
+    ui.volume.style.setProperty('--v', `${v}%`);
+  }
+
+  function syncMuted() {
+    const muted = getState().muted;
+    document.body.classList.toggle('is-muted', muted);
+    ui.mute.classList.toggle('is-muted', muted);
+    ui.mute.setAttribute('aria-label', muted ? '取消静音' : '静音');
+    ui.mute.setAttribute('aria-pressed', muted ? 'true' : 'false');
+    syncVolume();
+  }
+
+  // 正在播放信息：封面 + 标题/歌手跑马灯
+  function syncNowPlaying() {
+    const meta = getState().meta;
+    const isFile = getState().source === 'file';
+    const show = isFile && !!(meta && meta.title);
+    ui.nowPlaying.hidden = !show;
+    if (!show) return;
+    const text = meta.artist ? `${meta.title} — ${meta.artist}` : meta.title;
+    if (ui.npTitle.textContent !== text) ui.npTitle.textContent = text;
+    const coverUrl = playlist && playlist.current ? playlist.current.coverUrl : null;
+    if (coverUrl) {
+      if (!ui.npCover.querySelector('img')) {
+        ui.npCover.textContent = '';
+        const img = document.createElement('img');
+        img.alt = '';
+        ui.npCover.appendChild(img);
+      }
+      const img = ui.npCover.querySelector('img');
+      if (img.getAttribute('src') !== coverUrl) img.setAttribute('src', coverUrl);
+    } else {
+      ui.npCover.textContent = '';
+    }
+    // 溢出时启用跑马灯
+    requestAnimationFrame(() => {
+      const wrap = ui.npTitle.parentElement;
+      const over = ui.npTitle.scrollWidth - wrap.clientWidth;
+      if (over > 4) {
+        ui.npTitle.style.setProperty('--np-shift', `${-over - 24}px`);
+        ui.npTitle.classList.add('is-scroll');
+      } else {
+        ui.npTitle.classList.remove('is-scroll');
+      }
+    });
+  }
+
   subscribe('source', syncSource);
   subscribe('playing', syncPlaying);
   subscribe('mode', syncMode);
+  subscribe('volume', syncVolume);
+  subscribe('muted', syncMuted);
+  subscribe('meta', syncNowPlaying);
 
   // ---- 走带刷新（每帧调用）----
   function updateTransport() {
@@ -64,14 +128,19 @@ export function initDock({ engine, actions, autohide }) {
       ui.progress.disabled = false;
       const dur = engine.duration;
       if (Number.isFinite(dur) && dur > 0) {
+        const p = clamp(engine.currentTime / dur, 0, 1);
         if (!seeking) {
-          const p = clamp(engine.currentTime / dur, 0, 1);
           const value = Math.round(p * 1000);
           if (value !== painted) {
             ui.progress.value = String(value);
             paintProgress(value);
             painted = value;
           }
+        }
+        const buf = Math.round(Math.max(engine.buffered, p) * 100);
+        if (buf !== paintedBuffered) {
+          ui.progress.style.setProperty('--b', `${buf}%`);
+          paintedBuffered = buf;
         }
         setText(ui.timeNow, formatTime(engine.currentTime));
         setText(ui.timeTotal, formatTime(dur));
@@ -114,6 +183,37 @@ export function initDock({ engine, actions, autohide }) {
   ui.progress.addEventListener('blur', () => { seeking = false; autohide.setSeeking(false); });
   ui.progress.addEventListener('keyup', () => { seeking = false; autohide.setSeeking(false); });
 
+  // 进度条悬浮/拖动时间提示
+  if (ui.rangeWrap && ui.progressTip) {
+    const showTip = (clientX) => {
+      const dur = engine.duration;
+      if (getState().source !== 'file' || !Number.isFinite(dur) || dur <= 0) return;
+      const rect = ui.progress.getBoundingClientRect();
+      const ratio = clamp((clientX - rect.left) / rect.width, 0, 1);
+      setText(ui.progressTip, formatTime(ratio * dur));
+      ui.progressTip.style.left = `${ratio * 100}%`;
+      ui.progressTip.hidden = false;
+    };
+    const showTipByValue = () => {
+      const dur = engine.duration;
+      if (getState().source !== 'file' || !Number.isFinite(dur) || dur <= 0) return;
+      const ratio = clamp(Number(ui.progress.value) / 1000, 0, 1);
+      setText(ui.progressTip, formatTime(ratio * dur));
+      ui.progressTip.style.left = `${ratio * 100}%`;
+      ui.progressTip.hidden = false;
+    };
+    const hideTip = () => { ui.progressTip.hidden = true; };
+    ui.rangeWrap.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch' && !seeking) return;
+      showTip(e.clientX);
+    });
+    ui.rangeWrap.addEventListener('pointerdown', (e) => { showTip(e.clientX); });
+    ui.progress.addEventListener('input', showTipByValue);
+    ui.rangeWrap.addEventListener('pointerleave', () => { if (!seeking) hideTip(); });
+    window.addEventListener('pointerup', hideTip);
+    ui.progress.addEventListener('blur', hideTip);
+  }
+
   // ---- 按钮事件 ----
   ui.demo.addEventListener('click', () => actions.startDemo());
   ui.file.addEventListener('click', () => { ui.fileInput.value = ''; ui.fileInput.click(); });
@@ -124,22 +224,30 @@ export function initDock({ engine, actions, autohide }) {
   ui.mic.addEventListener('click', () => actions.toggleMic());
   ui.play.addEventListener('click', () => actions.togglePlay());
   ui.fullscreen.addEventListener('click', () => actions.toggleFullscreen());
+  if (ui.prev) ui.prev.addEventListener('click', () => actions.prev());
+  if (ui.next) ui.next.addEventListener('click', () => actions.next());
+  if (ui.mute) ui.mute.addEventListener('click', () => actions.toggleMute());
+  if (ui.volume) {
+    ui.volume.addEventListener('input', () => {
+      const v = clamp(Number(ui.volume.value) / 100, 0, 1);
+      if (getState().muted) setState({ muted: false });
+      actions.setVolume(v);
+    });
+  }
 
   ui.modeBtns.forEach((btn) => {
     btn.addEventListener('click', () => { actions.setMode(Number(btn.dataset.mode)); autohide.wake(); });
   });
 
-  // 曲目自然结束：暂停并置满进度（阶段2改为自动下一首）
-  engine.onEnded(() => {
-    if (getState().source !== 'file') return;
-    setState({ playing: false });
-    if (Number.isFinite(engine.duration)) { paintProgress(1000); painted = 1000; }
-  });
+  // 曲目自然结束由 playlist 统一处理（自动下一首/停止），dock 仅靠 updateTransport 刷新进度
 
   // 初始绘制
   syncSource();
   syncPlaying(getState().playing);
   syncMode(getState().mode);
+  syncMuted();
+  syncVolume();
+  syncNowPlaying();
   paintProgress(0);
   updateTransport();
 

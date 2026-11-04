@@ -336,16 +336,49 @@ export class AudioEngine {
   get currentTime() { return this.audioEl.currentTime; }
   get duration() { return this.audioEl.duration; }
 
+  // 已缓冲到的比例（取覆盖当前播放位置的最远缓冲段末端）
+  get buffered() {
+    const dur = this.audioEl.duration;
+    if (!Number.isFinite(dur) || dur <= 0) return 0;
+    try {
+      const ranges = this.audioEl.buffered;
+      let end = 0;
+      for (let i = 0; i < ranges.length; i++) {
+        if (ranges.start(i) <= this.audioEl.currentTime + 0.25) end = Math.max(end, ranges.end(i));
+      }
+      return clamp(end / dur, 0, 1);
+    } catch (err) {
+      return 0;
+    }
+  }
+
   seekRatio(p) {
     const dur = this.audioEl.duration;
     if (!Number.isFinite(dur) || dur <= 0) return;
     this.audioEl.currentTime = clamp(p, 0, 1) * dur;
   }
 
+  seekTo(sec) {
+    const dur = this.audioEl.duration;
+    if (!Number.isFinite(dur) || dur <= 0) return;
+    this.audioEl.currentTime = clamp(sec, 0, dur);
+  }
+
   seekBy(sec) {
     const dur = this.audioEl.duration;
     if (!Number.isFinite(dur) || dur <= 0) return;
     this.audioEl.currentTime = clamp(this.audioEl.currentTime + sec, 0, dur);
+  }
+
+  // iOS 需在用户手势中恢复 AudioContext；失败时返回 false 由上层提示
+  async unlock() {
+    if (!this.audioCtx) return true;
+    try {
+      await this.audioCtx.resume();
+      return this.audioCtx.state === 'running';
+    } catch (err) {
+      return false;
+    }
   }
 
   setVolume(v) {

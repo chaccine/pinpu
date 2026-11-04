@@ -54,25 +54,44 @@
         </svg>
         <span>麦克风</span>
       </button>
-      <input id="fileInput" type="file" accept="audio/*" hidden>
+      <input id="fileInput" type="file" accept="audio/*" multiple hidden>
+    </div>
+
+    <div class="dock-row nowplaying" id="nowPlaying" hidden>
+      <span class="np-cover" id="npCover" aria-hidden="true"></span>
+      <span class="np-text"><span class="np-marquee" id="npTitle">—</span></span>
     </div>
 
     <div class="dock-row transport">
+      <button class="skip-btn" id="btnPrev" type="button" title="上一首" aria-label="上一首">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6v12L9 12z" /><path d="M6 5v14" /></svg>
+      </button>
       <button class="play-btn" id="btnPlay" type="button" aria-label="播放">
         <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12z" /></svg>
         <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.6v14H7zM13.4 5H17v14h-3.6z" /></svg>
       </button>
+      <button class="skip-btn" id="btnNext" type="button" title="下一首" aria-label="下一首">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6v12l9-6z" /><path d="M18 5v14" /></svg>
+      </button>
       <span class="time" id="timeNow">0:00</span>
       <div class="range-wrap">
         <input id="progress" class="progress" type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度">
+        <span class="progress-tip" id="progressTip" hidden>0:00</span>
       </div>
       <span class="time" id="timeTotal">0:00</span>
+      <button class="skip-btn" id="btnMute" type="button" title="静音（M）" aria-label="静音">
+        <svg class="icon-vol" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l4 3V7l-4 3z" /><path d="M15 9.5a3.5 3.5 0 0 1 0 5M17.5 7.5a6.5 6.5 0 0 1 0 9" /></svg>
+        <svg class="icon-mute" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h3l4 3V7l-4 3z" /><path d="M16 10l4 4M20 10l-4 4" /></svg>
+      </button>
+      <input id="volume" class="volume" type="range" min="0" max="100" value="100" step="1" aria-label="音量">
     </div>
 
     <div class="dock-row mode-row" role="group" aria-label="视觉模式">
       <button class="mode is-active" type="button" data-mode="0">环形频谱</button>
       <button class="mode" type="button" data-mode="1">镜像波形</button>
       <button class="mode" type="button" data-mode="2">粒子星系</button>
+      <button class="mode" type="button" data-mode="3">律动封面环</button>
+      <button class="mode" type="button" data-mode="4">3D波形地形</button>
     </div>
   </section>
 
