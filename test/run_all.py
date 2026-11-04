@@ -10,157 +10,57 @@
 用法： /workspace/pwenv/bin/python test/run_all.py [--keep-server] [--only 名称子串]
 """
 import asyncio
+import glob
 import json
 import os
-import re
-import signal
-import socket
 import subprocess
 import sys
-import time
-import urllib.request
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PORT = 8765
-BASE = f"http://localhost:{PORT}/index.html"
-FIX = os.path.join(ROOT, "test", "fixtures")
-SHOTS = os.path.join(ROOT, "shots", "v2")
-CHROME = "/usr/bin/google-chrome"
-
-os.makedirs(SHOTS, exist_ok=True)
-
-# headless SwiftShader 在截图 readback 时会打印驱动性能提示，属测试环境噪声而非页面告警
-GL_DRIVER_NOISE = re.compile(r"GL Driver Message .*(ReadPixels|GL_CLOSE_PATH)")
+from harness import (
+    ROOT, BASE, FIX, CHROME, CHROME_ARGS,
+    Report, PageHarness, measure_fps, start_server, stop_server,
+)
 
 
-def env_gl_noise(text):
-    return bool(GL_DRIVER_NOISE.search(text or ""))
+# ---------------------------------------------------------------------------
+# 静态检查：node 语法、单文件行数、ID3 Node 单元测试
+# ---------------------------------------------------------------------------
+def static_checks(rep):
+    js_files = sorted(glob.glob(os.path.join(ROOT, "js", "**", "*.js"), recursive=True))
+    bad = []
+    for path in js_files:
+        with open(path, "rb") as fh:
+            src = fh.read()
+        r = subprocess.run(["node", "--input-type=module", "--check"],
+                           input=src, capture_output=True, timeout=30)
+        if r.returncode:
+            bad.append(os.path.relpath(path, ROOT))
+    rep.ok(f"node语法检查({len(js_files)}个JS模块)", not bad, ", ".join(bad[:4]))
 
-# 说明：headless chrome 默认即提供软件 WebGL2（SwiftShader）且 Canvas2D 跑满 60fps。
-# 强制 --use-angle=swiftshader 会把 Canvas2D 也拖到软件 GL（4~18fps），故不使用。
-CHROME_ARGS = [
-    "--no-sandbox",
-    "--disable-dev-shm-usage",
-    "--autoplay-policy=no-user-gesture-required",
-    "--use-fake-ui-for-media-stream",
-    "--use-fake-device-for-media-stream",
-]
+    all_code = (js_files
+                + sorted(glob.glob(os.path.join(ROOT, "css", "*.css")))
+                + sorted(glob.glob(os.path.join(ROOT, "test", "*.py")))
+                + sorted(glob.glob(os.path.join(ROOT, "test", "*.mjs")))
+                + [os.path.join(ROOT, "index.html")])
+    too_long = []
+    for path in all_code:
+        with open(path, encoding="utf-8") as fh:
+            n = sum(1 for _ in fh)
+        if n > 600:
+            too_long.append(f"{os.path.relpath(path, ROOT)}={n}")
+    rep.ok("代码文件均<600行", not too_long, ", ".join(too_long[:4]))
 
-ONLY = None
-if "--only" in sys.argv:
-    ONLY = sys.argv[sys.argv.index("--only") + 1]
-
-
-class Report:
-    def __init__(self):
-        self.rows = []  # (status, name, detail)
-
-    def add(self, status, name, detail=""):
-        self.rows.append((status, name, detail))
-        mark = {"PASS": "✓", "FAIL": "✗", "SKIP": "–"}.get(status, "?")
-        print(f"  [{mark}] {status:4} {name}" + (f"  — {detail}" if detail else ""), flush=True)
-
-    def ok(self, name, cond, detail=""):
-        self.add("PASS" if cond else "FAIL", name, detail)
-        return bool(cond)
-
-    def skip(self, name, detail=""):
-        self.add("SKIP", name, detail)
-
-    def summary(self):
-        p = sum(1 for r in self.rows if r[0] == "PASS")
-        f = sum(1 for r in self.rows if r[0] == "FAIL")
-        s = sum(1 for r in self.rows if r[0] == "SKIP")
-        return p, f, s
-
-
-def port_free():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(("127.0.0.1", PORT)) != 0
-
-
-def start_server():
-    if not port_free():
-        print(f"端口 {PORT} 已被占用，假定服务已在运行")
-        return None
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "http.server", str(PORT), "--bind", "127.0.0.1"],
-        cwd=ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        preexec_fn=os.setsid,
-    )
-    for _ in range(60):
-        try:
-            urllib.request.urlopen(f"http://127.0.0.1:{PORT}/index.html", timeout=1)
-            return proc
-        except Exception:
-            time.sleep(0.25)
-    raise RuntimeError("http.server 启动超时")
-
-
-def stop_server(proc):
-    if proc is None:
-        return
+    node_test = os.path.join(ROOT, "test", "id3_node_test.mjs")
     try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-    except Exception:
-        pass
-
-
-def want(name):
-    return ONLY is None or ONLY in name
-
-
-# ---------------------------------------------------------------------------
-# 通用页面工具
-# ---------------------------------------------------------------------------
-class PageHarness:
-    def __init__(self, page, report, tag):
-        self.page = page
-        self.rep = report
-        self.tag = tag
-        self.errors = []
-        self.failed = []
-        page.on("console", lambda m: self.errors.append((m.type, m.text))
-                if m.type in ("error", "warning") and not env_gl_noise(m.text) else None)
-        page.on("pageerror", lambda e: self.errors.append(("pageerror", str(e))))
-        page.on("requestfailed", lambda r: self.failed.append(
-            (r.url, getattr(r, "failure", None) and r.failure)))
-        self._responses = []
-        page.on("response", lambda r: self._responses.append((r.status, r.url)))
-
-    def name(self, n):
-        return f"{self.tag}:{n}"
-
-    def check(self, n, cond, detail=""):
-        if not want(n):
-            return
-        self.rep.ok(self.name(n), cond, detail)
-
-    def skip(self, n, detail=""):
-        if not want(n):
-            return
-        self.rep.skip(self.name(n), detail)
-
-    def not_404(self):
-        bad = [u for (s, u) in self._responses if s == 404]
-        return bad
-
-    async def shot(self, n):
-        if not want(n):
-            return
-        try:
-            await self.page.screenshot(path=os.path.join(SHOTS, f"{self.tag}-{n}.png"))
-        except Exception as e:
-            print("截图失败", n, e)
-
-
-async def measure_fps(page, ms=2500):
-    return await page.evaluate(
-        """(ms)=>new Promise(r=>{let n=0;const t0=performance.now();
-        function f(){n++;if(performance.now()-t0>ms)r(Math.round(n/((performance.now()-t0)/1000)));
-        else requestAnimationFrame(f);}requestAnimationFrame(f);})""", ms)
+        r = subprocess.run(["node", node_test], cwd=ROOT, capture_output=True,
+                           text=True, timeout=60)
+        passes = r.stdout.count("[PASS]")
+        fails = r.stdout.count("[FAIL]")
+        rep.ok("ID3 Node单元测试(标题/歌手/封面/损坏容错)",
+               r.returncode == 0 and fails == 0 and passes >= 10,
+               f"PASS={passes} FAIL={fails}")
+    except Exception as e:
+        rep.ok("ID3 Node单元测试(标题/歌手/封面/损坏容错)", False, str(e))
 
 
 # ---------------------------------------------------------------------------
@@ -281,14 +181,17 @@ async def v2_theme_checks(h):
     seen = set()
     t0 = await page.evaluate("__pinpu.theme")
     seen.add(t0)
+    accents = {await page.evaluate(
+        "getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()")}
     for _ in range(6):
         await page.keyboard.press("t")
         await page.wait_for_timeout(500)
         seen.add(await page.evaluate("__pinpu.theme"))
+        accents.add(await page.evaluate(
+            "getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()"))
     h.check("主题≥4套且T可循环", len(seen) >= 4, f"seen={sorted(seen)}")
-    # CSS 变量随主题变化
-    acc = await page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()")
-    h.check("CSS变量--accent存在", acc != "", acc)
+    h.check("主题切换CSS变量变化", len(accents) >= 2 and "" not in accents,
+            f"accents={len(accents)}")
 
 
 async def v2_modes_checks(h):
@@ -326,6 +229,54 @@ async def v2_playlist_checks(h, is_mobile):
     h.check("下一首切歌", idx == 1, f"idx={idx}")
     meta = await page.evaluate("__pinpu.meta")
     h.check("meta含标题", bool(meta and meta.get("title")), str(meta))
+
+    # 打开抽屉：循环模式 / 随机 / 拖动排序 / 删除
+    await page.click("#btnPlaylist")
+    await page.wait_for_timeout(400)
+    rows = await page.evaluate("document.querySelectorAll('.pl-item').length")
+    h.check("播放列表抽屉显示曲目", rows == len(files), f"rows={rows}")
+
+    loop_seen = []
+    for _ in range(4):
+        await page.click("#btnLoop")
+        await page.wait_for_timeout(250)
+        loop_seen.append(await page.evaluate("__pinpu.loopMode"))
+    h.check("四种播放模式可循环",
+            set(loop_seen) == {"order", "repeat", "single", "shuffle"}, str(loop_seen))
+
+    await page.evaluate("__pinpu.setLoopMode('shuffle')")
+    old = await page.evaluate("__pinpu.currentIndex")
+    await page.evaluate("__pinpu.next()")
+    await page.wait_for_timeout(900)
+    cur = await page.evaluate("__pinpu.currentIndex")
+    h.check("随机播放切歌不重复", 0 <= cur < len(files) and cur != old, f"{old}->{cur}")
+    await page.evaluate("__pinpu.setLoopMode('order')")
+
+    names_before = await page.evaluate(
+        "Array.from(document.querySelectorAll('.pl-item .pl-name')).map(e=>e.textContent)")
+    try:
+        hd = page.locator(".pl-item").nth(0).locator(".pl-drag")
+        hb = await hd.bounding_box()
+        sb = await page.locator(".pl-item").nth(1).bounding_box()
+        await page.mouse.move(hb["x"] + hb["width"] / 2, hb["y"] + hb["height"] / 2)
+        await page.mouse.down()
+        await page.mouse.move(hb["x"] + hb["width"] / 2,
+                              sb["y"] + sb["height"] * 0.78, steps=6)
+        await page.mouse.up()
+        await page.wait_for_timeout(500)
+    except Exception as e:
+        print("拖动排序异常", e)
+    names_after = await page.evaluate(
+        "Array.from(document.querySelectorAll('.pl-item .pl-name')).map(e=>e.textContent)")
+    h.check("拖动排序生效", names_after[:2] == [names_before[1], names_before[0]],
+            f"{names_before[:2]} -> {names_after[:2]}")
+
+    await page.locator(".pl-item").last.locator(".pl-del").click()
+    await page.wait_for_timeout(350)
+    ln2 = await page.evaluate("__pinpu.playlistLength")
+    h.check("删除单曲", ln2 == len(files) - 1, f"len={ln2} 期望{len(files)-1}")
+    await page.keyboard.press("Escape")
+    await page.wait_for_timeout(250)
 
 
 async def v2_id3_checks(h):
@@ -395,6 +346,71 @@ async def v2_shortcut_help(h):
     await page.keyboard.press("Escape")
     await page.wait_for_timeout(400)
 
+    # 静音与空格播放/暂停
+    await page.click("#btnDemo")
+    await page.wait_for_timeout(1200)
+    muted0 = await page.evaluate("__pinpu.muted")
+    await page.keyboard.press("m")
+    await page.wait_for_timeout(250)
+    muted1 = await page.evaluate("__pinpu.muted")
+    h.check("快捷键M切换静音", muted1 != muted0, f"{muted0}->{muted1}")
+    playing0 = await page.evaluate("__pinpu.playing")
+    await page.keyboard.press(" ")
+    await page.wait_for_timeout(700)
+    playing1 = await page.evaluate("__pinpu.playing")
+    h.check("空格播放/暂停", playing1 != playing0, f"{playing0}->{playing1}")
+    await page.keyboard.press(" ")
+
+
+async def v2_autohide_checks(h, is_mobile):
+    page = h.page
+    await page.goto(BASE)
+    await page.click("#btnDemo")
+    if is_mobile:
+        await page.touchscreen.tap(200, 300)  # 离开 dock，解除悬停抑制
+    else:
+        await page.mouse.move(720, 220)
+    await page.wait_for_timeout(3800)
+    hid = await page.evaluate("document.body.classList.contains('ui-hidden')")
+    h.check("播放时自动隐藏UI", hid)
+    if is_mobile:
+        await page.touchscreen.tap(240, 320)
+    else:
+        await page.mouse.move(760, 260)
+    await page.wait_for_timeout(300)
+    vis = await page.evaluate("!document.body.classList.contains('ui-hidden')")
+    h.check("指针移动唤出UI", vis)
+
+
+async def v2_memory_checks(h):
+    page = h.page
+    if not await has_feature(page, "playlist"):
+        return
+    await page.goto(BASE)
+    files = [os.path.join(FIX, f) for f in
+             ("id3v23_cn.mp3", "id3v24_utf8.mp3", "notag.mp3", "tone.wav")
+             if os.path.exists(os.path.join(FIX, f))]
+    await page.set_input_files("#fileInput", files)
+    await page.wait_for_timeout(2200)
+
+    async def heap():
+        return await page.evaluate(
+            """()=>{ if (typeof gc==='function') gc();
+            return performance.memory ? performance.memory.usedJSHeapSize : -1; }""")
+
+    base = await heap()
+    for _ in range(30):
+        await page.evaluate("__pinpu.next()")
+        await page.wait_for_timeout(160)
+    await page.wait_for_timeout(900)
+    after = await heap()
+    if base < 0 or after < 0:
+        h.skip("30次切歌内存无线性泄漏", "performance.memory 不可用")
+        return
+    delta_kb = round((after - base) / 1024)
+    h.check("30次切歌内存无线性泄漏", delta_kb < 4096,
+            f"{round(base/1024)}KB -> {round(after/1024)}KB (+{delta_kb}KB)")
+
 
 # ---------------------------------------------------------------------------
 # 主流程
@@ -427,6 +443,15 @@ async def run_context(browser, is_mobile, rep):
     await v2_renderer_checks(h)
     await v2_persist_checks(h)
     await v2_shortcut_help(h)
+    await v2_autohide_checks(h, is_mobile)
+    if not is_mobile:
+        await v2_memory_checks(h)
+
+    # 全程控制台与资源请求（覆盖上述所有导航与交互）
+    errs = [e for e in h.errors if "favicon" not in e[1].lower()]
+    h.check("全程控制台无error/warning", len(errs) == 0, str(errs[:4]))
+    bad = h.not_404()
+    h.check("全程无404请求", len(bad) == 0, str(bad[:4]))
 
     # 收尾截图
     await page.goto(BASE)
@@ -439,8 +464,10 @@ async def run_context(browser, is_mobile, rep):
 
 async def main():
     from playwright.async_api import async_playwright
-    proc = start_server()
     rep = Report()
+    print("=== 静态检查 ===", flush=True)
+    static_checks(rep)
+    proc = start_server()
     exit_code = 0
     try:
         async with async_playwright() as p:

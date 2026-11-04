@@ -81,3 +81,22 @@ frame(ts): dt/fps → 读频谱 → 检测节拍 → 平滑 → 更新粒子/色
 
 `window.__pinpu` 现有字段：`mode`、`beats`、`playing`、`source`、`fps`、`audioState`、`beatInfo`、`levels`、`spectrum`、`setMode(i)`。
 `verify.py` 依赖：`mode`/`beats`/`playing`/`fps`/`source` 与 `.mode[data-mode="N"]`、`#btnDemo`、`#btnPlay`、`#btnMic`、`#fileInput`、`#progress`、`#timeNow`/`#timeTotal` 选择器。重构与升级须保持这些可用。
+
+## 7. v2 模块划分（阶段 1–3 重构结果）
+
+v1 的 `app.js` 已拆为 ES Modules（v1 描述仅作历史基线保留）：
+
+| 模块 | 职责 |
+| --- | --- |
+| `js/main.js` | 应用装配、主循环、快捷键分发、拖拽加入、设置接线、`__pinpu` |
+| `js/state.js` / `storage.js` / `settings.js` | 状态订阅、`pinpu.v2.*` 持久化与 schema、设置默认值与清洗 |
+| `js/theme.js` / `shortcuts.js` / `utils.js` / `quality.js` | 主题插值、快捷键单一配置表、工具、自适应画质 |
+| `js/playlist.js` | 播放列表模型、四种循环模式、Media Session、封面 URL 生命周期 |
+| `js/audio/{engine,beat,demo,id3}.js` | 音频引擎/分析、节拍检测、演示合成、ID3/FLAC 解析 |
+| `js/render/renderer.js` | 渲染器工厂与 WebGL 能力检测/回退 |
+| `js/render/canvas2d.js` | Canvas2D 背景、环形、镜像与渐变缓存 |
+| `js/render/modes-extra.js` | 封面环、3D 地形、星系骨架与粒子 |
+| `js/render/webgl.js` | WebGL2/1 GPU 星系与地形、上下文丢失恢复 |
+| `js/ui/*` | dock、自动淡出、帮助、toast、主题/播放列表/设置面板 |
+
+样式由单个 `style.css` 拆为 `css/` 下 6 个文件（base/theme-panel/dock/playlist/overlays/settings），按顺序在 `index.html` 中引入。所有代码文件均少于 600 行。
