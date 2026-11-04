@@ -51,6 +51,23 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
+.theme-item.is-disabled,
+.theme-item[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.theme-item.is-disabled:hover,
+.theme-item[aria-disabled="true"]:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+}
+
+.theme-item.is-disabled .theme-swatch,
+.theme-item[aria-disabled="true"] .theme-swatch {
+  filter: grayscale(1);
+}
+
 .theme-swatch {
   flex: 0 0 auto;
   width: 20px;

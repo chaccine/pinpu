@@ -32,7 +32,20 @@ export const THEMES = [
   },
 ];
 
+// 动态「封面」主题：由 color.js 从当前封面派生，未就绪时回退到静态主题
+let coverTheme = null;
+
+export function setCoverTheme(theme) {
+  coverTheme = theme && theme.id === 'cover' ? theme : null;
+  return coverTheme;
+}
+
+export function getCoverTheme() {
+  return coverTheme;
+}
+
 export function themeById(id) {
+  if (id === 'cover' && coverTheme) return coverTheme;
   return THEMES.find((t) => t.id === id) || THEMES[0];
 }
 
@@ -93,7 +106,8 @@ export class ThemeController {
 
   setTheme(id, animate = true) {
     const target = themeById(id);
-    if (target.id === this.to.id && this.t >= 1) return;
+    // 同一静态主题对象无需重播；动态封面主题换新对象时仍要过渡
+    if (target === this.to && target.id === this.to.id && this.t >= 1) return;
     this.from = Object.assign({}, this.current);
     this.to = target;
     this.t = animate ? 0 : 1;

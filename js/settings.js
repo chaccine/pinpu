@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS = {
   playlistNames: [],
 };
 
-const THEMES = ['neon', 'sunset', 'ice', 'aurora'];
+const THEMES = ['neon', 'sunset', 'ice', 'aurora', 'cover'];
 const LOOPS = ['order', 'repeat', 'single', 'shuffle'];
 const LEVELS = ['low', 'mid', 'high'];
 const QUALITIES = ['auto', 'high', 'low'];

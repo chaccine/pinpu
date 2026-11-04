@@ -3,8 +3,9 @@
 
 import { THEMES } from '../theme.js';
 import { subscribe, getState } from '../state.js';
+import { getCoverState, subscribeCover } from '../coverTheme.js';
 
-export function initThemePanel({ setTheme }) {
+export function initThemePanel({ setTheme, toast }) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'icon-btn';
@@ -34,11 +35,37 @@ export function initThemePanel({ setTheme }) {
     panel.appendChild(item);
   });
 
+  // 动态「封面」主题：色块取当前封面主色；无封面时灰显并提示
+  const coverItem = document.createElement('button');
+  coverItem.type = 'button';
+  coverItem.className = 'theme-item theme-item-cover';
+  coverItem.dataset.theme = 'cover';
+  coverItem.setAttribute('role', 'menuitem');
+  coverItem.setAttribute('aria-label', '主题 封面');
+  coverItem.innerHTML =
+    '<span class="theme-swatch"></span><span class="theme-name">封面</span>';
+  const coverSwatch = coverItem.querySelector('.theme-swatch');
+  coverItem.addEventListener('click', () => {
+    if (!getCoverState().available) {
+      if (toast) toast('当前曲目没有封面');
+      return;
+    }
+    setTheme('cover');
+    sync();
+  });
+  panel.appendChild(coverItem);
+
   function sync() {
     const cur = getState().theme;
     panel.querySelectorAll('.theme-item').forEach((el) => {
       el.classList.toggle('is-active', el.dataset.theme === cur);
     });
+    const cover = getCoverState();
+    coverItem.classList.toggle('is-disabled', !cover.available);
+    coverItem.setAttribute('aria-disabled', cover.available ? 'false' : 'true');
+    coverSwatch.style.background = cover.theme
+      ? `linear-gradient(135deg, ${cover.theme.accent}, ${cover.theme.accent2})`
+      : 'linear-gradient(135deg, #3b4354, #202634)';
   }
 
   function toggle(force) {
@@ -58,6 +85,7 @@ export function initThemePanel({ setTheme }) {
   document.body.appendChild(panel);
 
   subscribe('theme', sync);
+  subscribeCover(sync);
   sync();
 
   return { toggle, sync, panel, btn };

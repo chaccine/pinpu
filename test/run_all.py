@@ -21,6 +21,7 @@ from harness import (
     Report, PageHarness, measure_fps, start_server, stop_server,
 )
 from autoswitch_checks import v2_autoswitch_checks
+from cover_theme_checks import v2_cover_theme_checks
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +56,7 @@ def static_checks(rep):
         ("test/id3_node_test.mjs", "ID3 Node单元测试(标题/歌手/封面/损坏容错)", 10),
         ("test/lrc_node_test.mjs", "LRC Node单元测试(时间戳/多标签/offset/排序/边界)", 20),
         ("test/autoswitch_node_test.mjs", "自动切换 Node单元测试(定时/暂停/突增/防抖/轮换)", 15),
+        ("test/color_node_test.mjs", "封面取色 Node单元测试(主色/回退/背景/字段)", 24),
     ]
     for rel, label, min_pass in node_tests:
         try:
@@ -519,6 +521,7 @@ async def run_context(browser, is_mobile, rep):
 
     print(f"\n=== {tag} v2 专项 ===", flush=True)
     await v2_theme_checks(h)
+    await v2_cover_theme_checks(h)
     await v2_modes_checks(h)
     await v2_playlist_checks(h, is_mobile)
     await v2_id3_checks(h)

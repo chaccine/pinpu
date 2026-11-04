@@ -17,6 +17,7 @@ import { initLyrics } from './ui/lyrics.js';
 import { initDrop } from './drop.js';
 import { readLrcFile, isLrcFile, bindLrcFiles } from './lyrics/source.js';
 import { ThemeController, applyThemeCSS, THEMES } from './theme.js';
+import { initCoverTheme } from './coverTheme.js';
 import { SHORTCUTS } from './shortcuts.js';
 import { settings, updateSettings, resetSettings, barsCountFor, DEFAULT_SETTINGS } from './settings.js';
 import { createQualityManager } from './quality.js';
@@ -28,7 +29,7 @@ const MODE_COUNT = 5;
 const features = {
   themes: true, fiveModes: true, playlist: true,
   id3: true, webgl: true, help: true, persist: true, settings: true, url: true,
-  lyrics: true, autoSwitch: true,
+  lyrics: true, autoSwitch: true, coverTheme: true,
 };
 
 // URL 分享参数（可选加分）：?mode=3&theme=sunset 优先于本地设置
@@ -39,7 +40,7 @@ const params = urlParams();
 const urlMode = Number.parseInt(params.get('mode') || '', 10);
 const initialMode = Number.isFinite(urlMode) ? clamp(urlMode, 0, MODE_COUNT - 1) : settings.mode;
 const urlTheme = params.get('theme');
-const initialTheme = THEMES.some((t) => t.id === urlTheme) ? urlTheme : settings.theme;
+const initialTheme = THEMES.some((t) => t.id === urlTheme) || urlTheme === 'cover' ? urlTheme : settings.theme;
 
 // ---- 初始化状态仓库（优先恢复本地设置）----
 initState({
@@ -351,7 +352,7 @@ const actions = {
   },
   toggleFullscreen,
   setTheme(id) {
-    if (THEMES.some((t) => t.id === id)) setState({ theme: id });
+    if (THEMES.some((t) => t.id === id) || id === 'cover') setState({ theme: id });
   },
   cycleTheme() {
     const i = THEMES.findIndex((t) => t.id === getState().theme);
@@ -376,7 +377,10 @@ const playlistPanel = initPlaylistPanel({
   onLoadLyrics: (file) => actions.loadLyricsFile(file),
 });
 const helpPanel = initHelpPanel();
-initThemePanel({ setTheme: (id) => actions.setTheme(id) });
+initThemePanel({ setTheme: (id) => actions.setTheme(id), toast });
+const coverTheme = initCoverTheme({ getCoverUrl: () => playlist.current && playlist.current.coverUrl,
+  themeCtrl, getState, setState, toast, settings,
+  persistTheme: (id) => updateSettings({ theme: id }) });
 
 // 播放列表只持久化曲目名/顺序；恢复后为占位项，播放时提示重新添加文件
 let playlistSaveTimer = 0;
@@ -527,6 +531,8 @@ function exposeDebugApi() {
     // v2 扩展字段
     get theme() { return getState().theme; },
     get themes() { return THEMES.map((t) => t.id); },
+    get coverThemeActive() { return coverTheme.active; },
+    get coverPalette() { return coverTheme.palette; },
     get renderer() { return renderer.kind; },
     get playlistLength() { return getState().playlistLength; },
     get currentIndex() { return getState().currentIndex; },
