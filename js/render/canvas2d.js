@@ -5,7 +5,7 @@
 import { TAU, clamp, hueOf, isMobile, prefersReducedMotion } from '../utils.js';
 import { getState } from '../state.js';
 import { THEMES } from '../theme.js';
-import { drawCoverRing, drawTerrain } from './modes-extra.js';
+import { drawCoverRing, drawTerrain, drawGalaxy } from './modes-extra.js';
 
 const HUE_SEGMENTS = 12;   // 色相分段合批
 const SPRITE_COUNT = 18;   // 预渲染发光贴图数量
@@ -45,15 +45,32 @@ export class Canvas2DRenderer {
     // 画质（阶段3自适应）：粒子/柱条/发光/DPR 上限的缩放因子
     this.quality = { dprCap: 2, particleScale: 1, glow: 1, barsScale: 1 };
     this.reducedMotion = prefersReducedMotion();
+    this._gradCache = new Map();
 
     this.buildSprites();
   }
 
   get barsCount() { return this.engine.barsCount; }
 
+  // 渐变缓存：键含色相/几何桶，避免每帧创建 CanvasGradient
+  grad(key, make) {
+    let g = this._gradCache.get(key);
+    if (!g) {
+      g = make();
+      if (this._gradCache.size > 96) {
+        this._gradCache.delete(this._gradCache.keys().next().value);
+      }
+      this._gradCache.set(key, g);
+    }
+    return g;
+  }
+
+  hueBucket(hue, step = 6) { return Math.round(hue / step) * step; }
+
   // 主题：保存插值后的主题对象；背景渐变随之重建
   setTheme(theme) {
     this.theme = theme || THEMES[0];
+    if (this._gradCache) this._gradCache.clear();
     this.rebuildBgGradient();
   }
 
@@ -135,6 +152,7 @@ export class Canvas2DRenderer {
     this.DPR = clamp(dpr || 1, 1, this.quality.dprCap);
     this.W = Math.max(1, w);
     this.H = Math.max(1, h);
+    this._gradCache.clear();
     this.canvas.width = Math.round(this.W * this.DPR);
     this.canvas.height = Math.round(this.H * this.DPR);
     this.g.setTransform(this.DPR, 0, 0, this.DPR, 0, 0);
@@ -217,7 +235,7 @@ export class Canvas2DRenderer {
     this.drawBackdrop();
     if (this.mode === 0) this.drawRing();
     else if (this.mode === 1) this.drawMirror();
-    else if (this.mode === 2) this.drawGalaxy(dt);
+    else if (this.mode === 2) drawGalaxy(this, dt);
     else if (this.mode === 3) drawCoverRing(this, dt);
     else drawTerrain(this, dt);
   }
@@ -234,10 +252,15 @@ export class Canvas2DRenderer {
 
     const cx = W / 2, cy = this.centerY();
     const radius = Math.max(W, H) * 0.62;
-    const grad = g.createRadialGradient(cx, cy, 0, cx, cy, radius);
-    grad.addColorStop(0, `hsla(${hueOf(hueBase + 30)}, 88%, 48%, ${0.1 + beatPulse * 0.09})`);
-    grad.addColorStop(0.55, `hsla(${hueOf(hueBase + 90)}, 85%, 42%, 0.035)`);
-    grad.addColorStop(1, 'hsla(0, 0%, 0%, 0)');
+    const hb = this.hueBucket(hueBase);
+    const pb = Math.round(beatPulse * 4) / 4;
+    const grad = this.grad(`bd:${hb}:${pb}:${W}:${H}`, () => {
+      const gr = g.createRadialGradient(cx, cy, 0, cx, cy, radius);
+      gr.addColorStop(0, `hsla(${hueOf(hb + 30)}, 88%, 48%, ${0.1 + pb * 0.09})`);
+      gr.addColorStop(0.55, `hsla(${hueOf(hb + 90)}, 85%, 42%, 0.035)`);
+      gr.addColorStop(1, 'hsla(0, 0%, 0%, 0)');
+      return gr;
+    });
     g.fillStyle = grad;
     g.fillRect(0, 0, W, H);
   }
@@ -275,10 +298,15 @@ export class Canvas2DRenderer {
     g.translate(cx, cy);
     g.globalCompositeOperation = 'lighter';
 
-    const glow = g.createRadialGradient(0, 0, baseR * 0.15, 0, 0, baseR * 1.7);
-    glow.addColorStop(0, `hsla(${hueOf(hueBase + 20)}, 95%, 66%, ${0.1 + beatPulse * 0.1})`);
-    glow.addColorStop(0.6, `hsla(${hueOf(hueBase + 70)}, 90%, 55%, 0.03)`);
-    glow.addColorStop(1, 'hsla(0, 0%, 0%, 0)');
+    const hb = this.hueBucket(hueBase);
+    const pb = Math.round(beatPulse * 4) / 4;
+    const glow = this.grad(`rg:${hb}:${pb}:${Math.round(baseR * 10)}`, () => {
+      const gr = g.createRadialGradient(0, 0, baseR * 0.15, 0, 0, baseR * 1.7);
+      gr.addColorStop(0, `hsla(${hueOf(hb + 20)}, 95%, 66%, ${0.1 + pb * 0.1})`);
+      gr.addColorStop(0.6, `hsla(${hueOf(hb + 70)}, 90%, 55%, 0.03)`);
+      gr.addColorStop(1, 'hsla(0, 0%, 0%, 0)');
+      return gr;
+    });
     g.fillStyle = glow;
     g.beginPath();
     g.arc(0, 0, baseR * 1.7, 0, TAU);
@@ -327,10 +355,13 @@ export class Canvas2DRenderer {
     }
 
     const coreR = baseR * 0.34 * (1 + beatPulse * 0.22);
-    const core = g.createRadialGradient(0, 0, 0, 0, 0, coreR);
-    core.addColorStop(0, 'rgba(255, 255, 255, 0.96)');
-    core.addColorStop(0.45, `hsla(${hueOf(hueBase + 18)}, 100%, 72%, 0.9)`);
-    core.addColorStop(1, `hsla(${hueOf(hueBase + 40)}, 100%, 56%, 0.04)`);
+    const core = this.grad(`rc:${hb}:${pb}:${Math.round(coreR * 10)}`, () => {
+      const gr = g.createRadialGradient(0, 0, 0, 0, 0, coreR);
+      gr.addColorStop(0, 'rgba(255, 255, 255, 0.96)');
+      gr.addColorStop(0.45, `hsla(${hueOf(hb + 18)}, 100%, 72%, 0.9)`);
+      gr.addColorStop(1, `hsla(${hueOf(hb + 40)}, 100%, 56%, 0.04)`);
+      return gr;
+    });
     g.beginPath();
     g.arc(0, 0, coreR, 0, TAU);
     g.fillStyle = core;
@@ -377,11 +408,15 @@ export class Canvas2DRenderer {
     g.save();
     g.globalCompositeOperation = 'lighter';
 
-    const lineGrad = g.createLinearGradient(x0, 0, x0 + usable, 0);
-    lineGrad.addColorStop(0, 'hsla(0, 0%, 100%, 0)');
-    lineGrad.addColorStop(0.2, `hsla(${hueOf(hueBase + 160)}, 95%, 68%, 0.45)`);
-    lineGrad.addColorStop(0.8, `hsla(${hueOf(hueBase + 220)}, 95%, 68%, 0.45)`);
-    lineGrad.addColorStop(1, 'hsla(0, 0%, 100%, 0)');
+    const hb = this.hueBucket(hueBase);
+    const lineGrad = this.grad(`ml:${hb}:${Math.round(x0)}:${Math.round(usable)}`, () => {
+      const gr = g.createLinearGradient(x0, 0, x0 + usable, 0);
+      gr.addColorStop(0, 'hsla(0, 0%, 100%, 0)');
+      gr.addColorStop(0.2, `hsla(${hueOf(hb + 160)}, 95%, 68%, 0.45)`);
+      gr.addColorStop(0.8, `hsla(${hueOf(hb + 220)}, 95%, 68%, 0.45)`);
+      gr.addColorStop(1, 'hsla(0, 0%, 100%, 0)');
+      return gr;
+    });
     g.fillStyle = lineGrad;
     g.fillRect(x0, midY - 1.2, usable, 2.4);
 
@@ -390,6 +425,7 @@ export class Canvas2DRenderer {
       const to = Math.min(BARS, from + segBars);
       if (from >= to) continue;
       const hcol = hueOf(hueBase + seg * spread);
+      const hcolB = this.hueBucket(hcol);
       const glowMul = this.quality.glow;
 
       for (let layer = 0; layer < 2; layer++) {
@@ -408,10 +444,13 @@ export class Canvas2DRenderer {
         g.fill();
       }
 
-      const grad = g.createLinearGradient(0, midY - maxH, 0, midY + maxH);
-      grad.addColorStop(0, `hsla(${hueOf(hcol + 18)}, 100%, 62%, 0.55)`);
-      grad.addColorStop(0.5, `hsla(${hcol}, 98%, 66%, 0.95)`);
-      grad.addColorStop(1, `hsla(${hueOf(hcol + 18)}, 100%, 62%, 0.55)`);
+      const grad = this.grad(`mg:${hcolB}:${Math.round(midY)}:${Math.round(maxH)}`, () => {
+        const gr = g.createLinearGradient(0, midY - maxH, 0, midY + maxH);
+        gr.addColorStop(0, `hsla(${hueOf(hcolB + 18)}, 100%, 62%, 0.55)`);
+        gr.addColorStop(0.5, `hsla(${hcolB}, 98%, 66%, 0.95)`);
+        gr.addColorStop(1, `hsla(${hueOf(hcolB + 18)}, 100%, 62%, 0.55)`);
+        return gr;
+      });
       g.beginPath();
       for (let i = from; i < to; i++) {
         const v = Math.pow(bars[i], 1.15);
@@ -482,86 +521,6 @@ export class Canvas2DRenderer {
       g.lineWidth = 1;
       g.stroke();
     }
-
-    g.restore();
-  }
-
-  drawGalaxy(dt) {
-    const g = this.g;
-    const { bars, beatPulse, energy } = this.engine.frame;
-    const hueBase = this.baseHue();
-    const BARS = bars.length;
-    const cx = this.W / 2, cy = this.centerY(), unit = this.stageUnit;
-    const radius = unit * 0.46;
-    const rotSpeed = 0.1 + energy * 0.9;
-    const time = this.time;
-
-    g.save();
-    g.globalCompositeOperation = 'lighter';
-
-    g.strokeStyle = 'rgba(120, 190, 255, 0.055)';
-    g.lineWidth = 1;
-    for (let k = 1; k <= 3; k++) {
-      g.beginPath();
-      g.ellipse(cx, cy, radius * 0.34 * k, radius * 0.34 * k * 0.7, 0, 0, TAU);
-      g.stroke();
-    }
-
-    g.beginPath();
-    for (let i = 0; i < BARS; i++) {
-      const a = (i / BARS) * TAU + time * 0.04;
-      const r0 = radius * 0.24;
-      const r1 = r0 + 2 + bars[i] * radius * 0.12;
-      g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
-      g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
-    }
-    g.strokeStyle = 'rgba(150, 220, 255, 0.15)';
-    g.lineWidth = 1;
-    g.stroke();
-
-    for (let i = 0; i < this.galaxy.length; i++) {
-      const p = this.galaxy[i];
-      p.a += dt * rotSpeed * (0.4 + p.spin * 0.9);
-      const rr = p.r * radius * (1 + beatPulse * 0.05 * (0.5 + p.depth));
-      const wob = Math.sin(time * p.wob + p.phase) * unit * 0.012;
-      const x = cx + Math.cos(p.a) * rr + wob;
-      const y = cy + Math.sin(p.a) * rr * 0.72 + wob * 0.6;
-      const size = p.size * (1 + beatPulse * 0.4) * (0.7 + p.depth * 0.7);
-      g.globalAlpha = 0.2 + p.depth * 0.42 + energy * 0.3;
-      g.drawImage(this.spriteFor(hueBase + p.hueOff), x - size / 2, y - size / 2, size, size);
-    }
-    g.globalAlpha = 1;
-
-    const coreR = unit * 0.046 * (1 + beatPulse * 0.5);
-    const core = g.createRadialGradient(cx, cy, 0, cx, cy, coreR * 3);
-    core.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
-    core.addColorStop(0.25, `hsla(${hueOf(hueBase + 175)}, 100%, 72%, 0.85)`);
-    core.addColorStop(0.6, `hsla(${hueOf(hueBase + 210)}, 100%, 60%, 0.25)`);
-    core.addColorStop(1, 'hsla(0, 0%, 0%, 0)');
-    g.fillStyle = core;
-    g.beginPath();
-    g.arc(cx, cy, coreR * 3, 0, TAU);
-    g.fill();
-
-    g.fillStyle = 'rgba(255, 255, 255, 0.92)';
-    g.beginPath();
-    g.arc(cx, cy, coreR * 0.42, 0, TAU);
-    g.fill();
-
-    for (let i = 0; i < this.sparks.length; i++) {
-      const s = this.sparks[i];
-      const alpha = clamp(s.life, 0, 1);
-      g.strokeStyle = `hsla(${hueOf(s.hue)}, 100%, 70%, ${0.68 * alpha})`;
-      g.lineWidth = s.w;
-      g.beginPath();
-      g.moveTo(s.px - s.vx * 0.022, s.py - s.vy * 0.022);
-      g.lineTo(s.x, s.y);
-      g.stroke();
-      const size = 10 + 20 * s.life;
-      g.globalAlpha = alpha * 0.85;
-      g.drawImage(this.spriteFor(s.hue), s.x - size / 2, s.y - size / 2, size, size);
-    }
-    g.globalAlpha = 1;
 
     g.restore();
   }

@@ -50,10 +50,14 @@ export function drawCoverRing(r, dt) {
     const s = Math.max(d / iw, d / ih);
     g.drawImage(r.coverImg, -iw * s / 2, -ih * s / 2, iw * s, ih * s);
   } else {
-    const grad = g.createRadialGradient(0, 0, 0, 0, 0, R);
-    grad.addColorStop(0, `hsla(${hueOf(hueBase + 20)}, 90%, 60%, 0.9)`);
-    grad.addColorStop(0.6, `hsla(${hueOf(hueBase + 60)}, 80%, 34%, 0.85)`);
-    grad.addColorStop(1, `hsla(${hueOf(hueBase + 120)}, 70%, 16%, 0.9)`);
+    const hb = r.hueBucket(hueBase);
+    const grad = r.grad(`cr:${hb}:${Math.round(R)}`, () => {
+      const gr = g.createRadialGradient(0, 0, 0, 0, 0, R);
+      gr.addColorStop(0, `hsla(${hueOf(hb + 20)}, 90%, 60%, 0.9)`);
+      gr.addColorStop(0.6, `hsla(${hueOf(hb + 60)}, 80%, 34%, 0.85)`);
+      gr.addColorStop(1, `hsla(${hueOf(hb + 120)}, 70%, 16%, 0.9)`);
+      return gr;
+    });
     g.fillStyle = grad;
     g.fillRect(-R, -R, R * 2, R * 2);
   }
@@ -200,10 +204,135 @@ export function drawTerrain(r, dt) {
   }
 
   // 地平线辉光
-  const glow = g.createLinearGradient(0, horizon - 40, 0, horizon + 30);
-  glow.addColorStop(0, `hsla(${hueOf(hueBase + 40)}, 90%, 60%, 0)`);
-  glow.addColorStop(0.7, `hsla(${hueOf(hueBase + 40)}, 90%, 60%, ${0.10 + beatPulse * 0.10})`);
-  glow.addColorStop(1, `hsla(${hueOf(hueBase + 40)}, 90%, 60%, 0)`);
+  drawTerrainGlow(r);
+}
+
+// 地平线辉光单独导出：WebGL 地形叠加时由 Canvas2D 承担氛围层
+export function drawTerrainGlow(r) {
+  const g = r.g;
+  const f = r.engine.frame;
+  const W = r.W;
+  const horizon = r.centerY() - r.stageUnit * 0.16;
+  const hb = r.hueBucket(r.baseHue() + 40);
+  const pb = Math.round(f.beatPulse * 4) / 4;
+  const glow = r.grad(`tg:${hb}:${pb}:${W}:${Math.round(horizon)}`, () => {
+    const gr = g.createLinearGradient(0, horizon - 40, 0, horizon + 30);
+    gr.addColorStop(0, `hsla(${hueOf(hb)}, 90%, 60%, 0)`);
+    gr.addColorStop(0.7, `hsla(${hueOf(hb)}, 90%, 60%, ${0.10 + pb * 0.10})`);
+    gr.addColorStop(1, `hsla(${hueOf(hb)}, 90%, 60%, 0)`);
+    return gr;
+  });
   g.fillStyle = glow;
   g.fillRect(0, horizon - 40, W, 70);
+}
+
+// ---- 模式2：粒子星系（WebGL 版复用背景骨架与火花）----
+export function drawGalaxy(r, dt) {
+  drawGalaxyScaffold(r);
+  drawGalaxyParticles(r, dt);
+  drawSparks(r);
+}
+
+// 背景骨架：轨道椭圆、内圈频谱、中心核
+export function drawGalaxyScaffold(r) {
+  const g = r.g;
+  const { bars, beatPulse } = r.engine.frame;
+  const hueBase = r.baseHue();
+  const BARS = bars.length;
+  const cx = r.W / 2, cy = r.centerY(), unit = r.stageUnit;
+  const radius = unit * 0.46;
+  const time = r.time;
+
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+
+  g.strokeStyle = 'rgba(120, 190, 255, 0.055)';
+  g.lineWidth = 1;
+  for (let k = 1; k <= 3; k++) {
+    g.beginPath();
+    g.ellipse(cx, cy, radius * 0.34 * k, radius * 0.34 * k * 0.7, 0, 0, TAU);
+    g.stroke();
+  }
+
+  g.beginPath();
+  for (let i = 0; i < BARS; i++) {
+    const a = (i / BARS) * TAU + time * 0.04;
+    const r0 = radius * 0.24;
+    const r1 = r0 + 2 + bars[i] * radius * 0.12;
+    g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+    g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+  }
+  g.strokeStyle = 'rgba(150, 220, 255, 0.15)';
+  g.lineWidth = 1;
+  g.stroke();
+
+  const coreR = unit * 0.046 * (1 + beatPulse * 0.5);
+  const hb = r.hueBucket(hueBase);
+  const pb = Math.round(beatPulse * 4) / 4;
+  const core = r.grad(`gc:${hb}:${pb}:${Math.round(coreR * 30)}:${Math.round(cx)}:${Math.round(cy)}`, () => {
+    const gr = g.createRadialGradient(cx, cy, 0, cx, cy, coreR * 3);
+    gr.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+    gr.addColorStop(0.25, `hsla(${hueOf(hb + 175)}, 100%, 72%, 0.85)`);
+    gr.addColorStop(0.6, `hsla(${hueOf(hb + 210)}, 100%, 60%, 0.25)`);
+    gr.addColorStop(1, 'hsla(0, 0%, 0%, 0)');
+    return gr;
+  });
+  g.fillStyle = core;
+  g.beginPath();
+  g.arc(cx, cy, coreR * 3, 0, TAU);
+  g.fill();
+
+  g.fillStyle = 'rgba(255, 255, 255, 0.92)';
+  g.beginPath();
+  g.arc(cx, cy, coreR * 0.42, 0, TAU);
+  g.fill();
+
+  g.restore();
+}
+
+function drawGalaxyParticles(r, dt) {
+  const g = r.g;
+  const { beatPulse, energy } = r.engine.frame;
+  const hueBase = r.baseHue();
+  const cx = r.W / 2, cy = r.centerY(), unit = r.stageUnit;
+  const radius = unit * 0.46;
+  const rotSpeed = 0.1 + energy * 0.9;
+  const time = r.time;
+
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < r.galaxy.length; i++) {
+    const p = r.galaxy[i];
+    p.a += dt * rotSpeed * (0.4 + p.spin * 0.9);
+    const rr = p.r * radius * (1 + beatPulse * 0.05 * (0.5 + p.depth));
+    const wob = Math.sin(time * p.wob + p.phase) * unit * 0.012;
+    const x = cx + Math.cos(p.a) * rr + wob;
+    const y = cy + Math.sin(p.a) * rr * 0.72 + wob * 0.6;
+    const size = p.size * (1 + beatPulse * 0.4) * (0.7 + p.depth * 0.7);
+    g.globalAlpha = 0.2 + p.depth * 0.42 + energy * 0.3;
+    g.drawImage(r.spriteFor(hueBase + p.hueOff), x - size / 2, y - size / 2, size, size);
+  }
+  g.globalAlpha = 1;
+  g.restore();
+}
+
+export function drawSparks(r) {
+  const g = r.g;
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < r.sparks.length; i++) {
+    const s = r.sparks[i];
+    const alpha = clamp(s.life, 0, 1);
+    g.strokeStyle = `hsla(${hueOf(s.hue)}, 100%, 70%, ${0.68 * alpha})`;
+    g.lineWidth = s.w;
+    g.beginPath();
+    g.moveTo(s.px - s.vx * 0.022, s.py - s.vy * 0.022);
+    g.lineTo(s.x, s.y);
+    g.stroke();
+    const size = 10 + 20 * s.life;
+    g.globalAlpha = alpha * 0.85;
+    g.drawImage(r.spriteFor(s.hue), s.x - size / 2, s.y - size / 2, size, size);
+  }
+  g.globalAlpha = 1;
+  g.restore();
 }

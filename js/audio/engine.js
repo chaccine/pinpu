@@ -114,6 +114,10 @@ export class AudioEngine {
     if (this.analyser) this.analyser.smoothingTimeConstant = v;
   }
 
+  setBeatSensitivity(v) {
+    this.beat.setSensitivity(clamp(Number(v) || 1, 0.5, 2));
+  }
+
   readSpectrum() {
     const N = this.barsCount;
     const freq = this.frame.freq;

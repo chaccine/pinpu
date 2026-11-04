@@ -7,7 +7,7 @@ import { setText, formatTime } from '../utils.js';
 
 const NOTE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l10-2v11"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="15" r="2.5"/></svg>';
 
-export function initPlaylistPanel({ playlist, toast }) {
+export function initPlaylistPanel({ playlist, toast, onChange }) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'icon-btn';
@@ -48,6 +48,7 @@ export function initPlaylistPanel({ playlist, toast }) {
     btn.setAttribute('aria-expanded', show ? 'true' : 'false');
     btn.setAttribute('aria-label', show ? '关闭播放列表' : '打开播放列表');
     if (show) render();
+    if (onChange) onChange(show);
   }
 
   function syncLoop() {

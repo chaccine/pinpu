@@ -1,0 +1,222 @@
+/* ===== v2：快捷键帮助 ===== */
+.help-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(3, 5, 10, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  opacity: 0;
+  transition: opacity 0.24s ease;
+}
+
+.help-panel[hidden] {
+  display: none;
+}
+
+.help-panel.show {
+  opacity: 1;
+}
+
+.help-card {
+  width: min(540px, 100%);
+  max-height: 82vh;
+  overflow-y: auto;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--stroke);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(20, 27, 44, 0.94), rgba(7, 10, 19, 0.98));
+  box-shadow: 0 26px 80px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+.help-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 20px;
+}
+
+.help-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+
+.help-keys {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid rgba(92, 225, 255, 0.32);
+  border-radius: 6px;
+  color: var(--accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.help-label {
+  color: #cfdaef;
+  font-size: 12px;
+  text-align: right;
+}
+
+.help-tip {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ===== v2：沉浸模式 / 自动隐藏扩展 ===== */
+body.is-immersive .topbar,
+body.is-immersive .dock,
+body.is-immersive .hint,
+body.is-immersive .toast,
+body.is-immersive .theme-panel,
+body.is-immersive .playlist-panel,
+body.is-immersive .help-panel,
+body.is-immersive .fps-meter {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  body.is-immersive {
+    cursor: none;
+  }
+}
+
+body.ui-hidden .playlist-panel,
+body.ui-hidden .help-panel {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ===== v2：多视口适配 ===== */
+@media (max-width: 620px) {
+  .source-tag {
+    display: none;
+  }
+
+  .skip-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .skip-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .transport {
+    gap: 5px;
+  }
+
+  .time {
+    width: 30px;
+  }
+
+  .volume {
+    width: 48px;
+  }
+
+  .mode-row {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mode-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mode {
+    flex: 1 0 auto;
+    min-width: 72px;
+    padding: 0 8px;
+    white-space: nowrap;
+  }
+
+  .playlist-panel {
+    top: auto;
+    right: 9px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 9px);
+    left: 9px;
+    width: auto;
+    max-height: min(58vh, 520px);
+  }
+
+  .help-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .play-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .play-btn svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .nowplaying {
+    padding: 0 2px;
+  }
+
+  .np-cover {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+  }
+
+  .np-marquee {
+    font-size: 11.5px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 820px) {
+  .dock {
+    grid-template-areas:
+      "sources modes"
+      "np np"
+      "transport transport";
+  }
+
+  .nowplaying { grid-area: np; }
+
+  .skip-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .volume {
+    width: 56px;
+  }
+}
+
+@media (max-height: 520px) {
+  .nowplaying[hidden] {
+    display: none;
+  }
+
+  .np-cover {
+    width: 24px;
+    height: 24px;
+  }
+}
+

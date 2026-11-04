@@ -12,28 +12,41 @@ import { initDock } from './ui/dock.js';
 import { initThemePanel } from './ui/theme-panel.js';
 import { initPlaylistPanel } from './ui/playlist-panel.js';
 import { initHelpPanel } from './ui/help.js';
+import { initSettingsPanel } from './ui/settings-panel.js';
 import { ThemeController, applyThemeCSS, THEMES } from './theme.js';
 import { SHORTCUTS } from './shortcuts.js';
+import { settings, updateSettings, resetSettings, barsCountFor, DEFAULT_SETTINGS } from './settings.js';
+import { createQualityManager } from './quality.js';
 
 const MODE_COUNT = 5;
 
 // 能力位：随阶段实现逐项置真，测试据此判断是否跳过尚未实现的特性
 const features = {
   themes: true, fiveModes: true, playlist: true,
-  id3: true, webgl: false, help: true, persist: false, settings: false,
+  id3: true, webgl: true, help: true, persist: true, settings: true, url: true,
 };
 
-// ---- 初始化状态仓库 ----
+// URL 分享参数（可选加分）：?mode=3&theme=sunset 优先于本地设置
+function urlParams() {
+  try { return new URLSearchParams(window.location.search); } catch (err) { return new URLSearchParams(); }
+}
+const params = urlParams();
+const urlMode = Number.parseInt(params.get('mode') || '', 10);
+const initialMode = Number.isFinite(urlMode) ? clamp(urlMode, 0, MODE_COUNT - 1) : settings.mode;
+const urlTheme = params.get('theme');
+const initialTheme = THEMES.some((t) => t.id === urlTheme) ? urlTheme : settings.theme;
+
+// ---- 初始化状态仓库（优先恢复本地设置）----
 initState({
-  mode: 0,
+  mode: initialMode,
   source: 'none',
   playing: false,
   fps: 60,
-  theme: 'neon',
+  theme: initialTheme,
   renderer: '2d',
-  volume: 1,
-  muted: false,
-  loopMode: 'order',
+  volume: settings.volume,
+  muted: settings.muted,
+  loopMode: settings.loopMode,
   currentIndex: -1,
   playlistLength: 0,
   meta: { title: '', artist: '', hasCover: false },
@@ -41,22 +54,52 @@ initState({
 
 // ---- 创建核心对象 ----
 const canvas = $('#stage');
-const engine = new AudioEngine();
+const engine = new AudioEngine({
+  barsCount: barsCountFor(settings.barsLevel),
+  smoothing: settings.smoothing,
+});
+engine.setBeatSensitivity(settings.sensitivity);
 const playlist = new Playlist(engine);
-const renderer = createRenderer(canvas, engine);
+const renderer = createRenderer(canvas, engine, { prefer2d: settings.renderer === '2d' });
 const toast = createToast($('#toast'));
 const autohide = createAutoHide();
+setState({ renderer: renderer.kind });
+
+let settingsPanel = null;
+let qualityManager = null;
 
 // ---- 主题：400ms 平滑过渡，逐帧驱动渲染器着色与 CSS 变量 ----
 const themeCtrl = new ThemeController((interp) => {
   renderer.setTheme(interp);
   applyThemeCSS(interp);
 });
-renderer.setTheme(THEMES[0]);
-applyThemeCSS(THEMES[0]);
+themeCtrl.setTheme(initialTheme, false);
 
-subscribe('theme', (id) => themeCtrl.setTheme(id));
-subscribe('mode', (mode) => renderer.setMode(mode));
+subscribe('theme', (id) => {
+  themeCtrl.setTheme(id);
+  updateSettings({ theme: id });
+});
+subscribe('mode', (mode) => {
+  renderer.setMode(mode);
+  updateSettings({ mode });
+});
+subscribe('volume', (v) => {
+  engine.setVolume(v);
+  updateSettings({ volume: v });
+});
+subscribe('muted', (m) => {
+  engine.setMuted(m);
+  updateSettings({ muted: m });
+});
+subscribe('loopMode', (m) => updateSettings({ loopMode: m }));
+
+if (renderer.onKindChange) {
+  renderer.onKindChange((kind) => {
+    setState({ renderer: kind });
+    if (settingsPanel) settingsPanel.setEngine(kind);
+    toast(kind === 'webgl' ? 'WebGL 已恢复' : 'WebGL 不可用，已降级为 Canvas2D');
+  });
+}
 
 // 节拍 → 渲染器粒子爆发/地形起伏
 engine.onBeat((energy) => {
@@ -87,6 +130,65 @@ function resize() {
   const dpr = window.devicePixelRatio || 1;
   renderer.resize(window.innerWidth, window.innerHeight, dpr, measureDock());
 }
+
+// ---- 设置项即时生效 ----
+function applySetting(key, value) {
+  updateSettings({ [key]: value });
+  if (key === 'sensitivity') engine.setBeatSensitivity(value);
+  else if (key === 'smoothing') engine.setSmoothing(value);
+  else if (key === 'barsLevel') qualityManager.setBaseBars(barsCountFor(value));
+  else if (key === 'density') qualityManager.setDensity(value);
+  else if (key === 'quality') qualityManager.setMode(value);
+  else if (key === 'showFps' && !value && settingsPanel) {
+    settingsPanel.setFps(0, renderer.kind, false);
+  }
+}
+
+function resetAllSettings() {
+  resetSettings();
+  engine.setBeatSensitivity(DEFAULT_SETTINGS.sensitivity);
+  engine.setSmoothing(DEFAULT_SETTINGS.smoothing);
+  setState({
+    theme: DEFAULT_SETTINGS.theme,
+    mode: DEFAULT_SETTINGS.mode,
+    volume: DEFAULT_SETTINGS.volume,
+    muted: DEFAULT_SETTINGS.muted,
+    loopMode: DEFAULT_SETTINGS.loopMode,
+  });
+  engine.setVolume(DEFAULT_SETTINGS.volume);
+  engine.setMuted(DEFAULT_SETTINGS.muted);
+  playlist.setLoopMode(DEFAULT_SETTINGS.loopMode);
+  qualityManager.setDensity(DEFAULT_SETTINGS.density);
+  qualityManager.setMode(DEFAULT_SETTINGS.quality);
+  qualityManager.setBaseBars(barsCountFor(DEFAULT_SETTINGS.barsLevel));
+  settingsPanel.refresh();
+  settingsPanel.setQualityText(qualityManager.tier);
+  settingsPanel.setEngine(renderer.kind);
+  toast('已恢复默认设置');
+}
+
+settingsPanel = initSettingsPanel({
+  settings,
+  onPatch: applySetting,
+  onReset: resetAllSettings,
+  toast,
+});
+qualityManager = createQualityManager({
+  engine,
+  renderer,
+  baseBars: barsCountFor(settings.barsLevel),
+  density: settings.density,
+  mode: settings.quality,
+  onApply: (tier) => {
+    resize();
+    if (settingsPanel) {
+      settingsPanel.setQualityText(tier);
+      settingsPanel.setEngine(renderer.kind);
+    }
+  },
+});
+settingsPanel.setEngine(renderer.kind);
+settingsPanel.setQualityText(qualityManager.tier);
 
 // ---- 全屏（含 webkit 前缀与 iOS 沉浸模式降级）----
 function fsElement() {
@@ -161,6 +263,9 @@ const actions = {
     else actions.startMic();
   },
   async togglePlay() {
+    // iOS 需在用户手势内恢复 AudioContext；失败时明确提示而不是静默
+    const unlocked = await engine.unlock();
+    if (!unlocked) { toast('音频上下文未能启动，请再次点击播放'); return; }
     if (getState().source === 'none' && playlist.length) {
       const res = await playlist.playIndex(playlist.index >= 0 ? playlist.index : 0);
       if (res === 'placeholder') toast('请重新添加该文件后再播放');
@@ -224,14 +329,34 @@ const actions = {
 
 // ---- 装配 UI ----
 const dock = initDock({ engine, actions, autohide, playlist });
-const playlistPanel = initPlaylistPanel({ playlist, toast });
+const playlistPanel = initPlaylistPanel({
+  playlist,
+  toast,
+  onChange: (open) => updateSettings({ playlistOpen: open }),
+});
 const helpPanel = initHelpPanel();
 initThemePanel({ setTheme: (id) => actions.setTheme(id) });
+
+// 播放列表只持久化曲目名/顺序；恢复后为占位项，播放时提示重新添加文件
+let playlistSaveTimer = 0;
+playlist.onChange(() => {
+  clearTimeout(playlistSaveTimer);
+  playlistSaveTimer = setTimeout(() => {
+    updateSettings({ playlistNames: playlist.names() });
+  }, 300);
+});
+if (settings.playlistNames.length) {
+  playlist.restoreNames(settings.playlistNames);
+  toast('已恢复上次播放列表，请重新添加文件后播放');
+}
+if (settings.playlistOpen) playlistPanel.toggle(true);
 
 // ---- 键盘：Esc 先处理浮层/沉浸，其余由统一配置表分发 ----
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (helpPanel.isOpen()) { helpPanel.close(); e.preventDefault(); return; }
+    if (settingsPanel.isOpen()) { settingsPanel.close(); e.preventDefault(); return; }
+    if (playlistPanel.isOpen()) { playlistPanel.toggle(false); e.preventDefault(); return; }
     if (isImmersive()) { exitImmersive(); e.preventDefault(); return; }
   }
   if (e.defaultPrevented) return;
@@ -335,18 +460,27 @@ canvas.addEventListener('dblclick', (e) => { e.preventDefault(); toggleFullscree
 const dockEl = $('#dock');
 if (window.ResizeObserver && dockEl) new ResizeObserver(() => resize()).observe(dockEl);
 
-// ---- 主循环 ----
+// ---- 主循环：页面不可见/失焦时暂停；暂停播放时降帧；播放中自适应画质 ----
 let lastTs = 0;
+let lastWork = 0;
 let fpsAcc = 0;
 let fpsFrames = 0;
 let fps = 60;
+let qualityAcc = 0;
+let running = false;
+let rafId = 0;
 
 function frame(ts) {
-  requestAnimationFrame(frame);
+  if (!running) return;
+  rafId = requestAnimationFrame(frame);
+
+  const playing = getState().playing;
+  if (!playing && ts - lastWork < 32) return;   // 暂停时约 30fps
   if (!lastTs) lastTs = ts;
   let dt = (ts - lastTs) / 1000;
   lastTs = ts;
   dt = clamp(dt, 0.001, 0.05);
+  lastWork = ts;
 
   fpsAcc += dt;
   fpsFrames++;
@@ -355,13 +489,42 @@ function frame(ts) {
     fpsAcc = 0;
     fpsFrames = 0;
     setState({ fps });
+    settingsPanel.setFps(fps, renderer.kind, settings.showFps);
   }
 
   engine.update(dt, ts / 1000);
   themeCtrl.update(dt);
   renderer.render(dt);
   dock.updateTransport();
+
+  if (playing) {
+    qualityAcc += dt;
+    if (qualityAcc >= 2) {
+      qualityAcc = 0;
+      qualityManager.sample(fps);
+    }
+  }
 }
+
+function startLoop() {
+  if (running) return;
+  running = true;
+  lastTs = 0;
+  lastWork = 0;
+  rafId = requestAnimationFrame(frame);
+}
+
+function stopLoop() {
+  running = false;
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = 0;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopLoop(); else startLoop();
+});
+window.addEventListener('blur', stopLoop);
+window.addEventListener('focus', startLoop);
 
 // ---- 调试接口（verify.py / run_all.py 依赖）----
 function exposeDebugApi() {
@@ -385,6 +548,9 @@ function exposeDebugApi() {
     get loopMode() { return getState().loopMode; },
     get volume() { return getState().volume; },
     get muted() { return getState().muted; },
+    get quality() { return qualityManager.tier; },
+    get webglLevel() { return renderer.level || 0; },
+    get settings() { return Object.assign({}, settings); },
     features,
     setMode: (i) => actions.setMode(i),
     setTheme: (id) => actions.setTheme(id),
@@ -404,4 +570,4 @@ function exposeDebugApi() {
 resize();
 renderer.setMode(getState().mode);
 exposeDebugApi();
-requestAnimationFrame(frame);
+startLoop();

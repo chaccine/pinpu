@@ -12,6 +12,7 @@
 import asyncio
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -27,6 +28,13 @@ SHOTS = os.path.join(ROOT, "shots", "v2")
 CHROME = "/usr/bin/google-chrome"
 
 os.makedirs(SHOTS, exist_ok=True)
+
+# headless SwiftShader 在截图 readback 时会打印驱动性能提示，属测试环境噪声而非页面告警
+GL_DRIVER_NOISE = re.compile(r"GL Driver Message .*(ReadPixels|GL_CLOSE_PATH)")
+
+
+def env_gl_noise(text):
+    return bool(GL_DRIVER_NOISE.search(text or ""))
 
 # 说明：headless chrome 默认即提供软件 WebGL2（SwiftShader）且 Canvas2D 跑满 60fps。
 # 强制 --use-angle=swiftshader 会把 Canvas2D 也拖到软件 GL（4~18fps），故不使用。
@@ -115,7 +123,7 @@ class PageHarness:
         self.errors = []
         self.failed = []
         page.on("console", lambda m: self.errors.append((m.type, m.text))
-                if m.type in ("error", "warning") else None)
+                if m.type in ("error", "warning") and not env_gl_noise(m.text) else None)
         page.on("pageerror", lambda e: self.errors.append(("pageerror", str(e))))
         page.on("requestfailed", lambda r: self.failed.append(
             (r.url, getattr(r, "failure", None) and r.failure)))

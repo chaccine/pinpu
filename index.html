@@ -7,7 +7,12 @@
   <meta name="description" content="纯前端音乐频谱可视化，支持本地音频、麦克风与合成演示曲目。">
   <title>频谱 · 音乐可视化</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Ccircle%20cx='32'%20cy='32'%20r='21'%20fill='none'%20stroke='%235ce1ff'%20stroke-width='8'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/theme-panel.css">
+  <link rel="stylesheet" href="css/dock.css">
+  <link rel="stylesheet" href="css/playlist.css">
+  <link rel="stylesheet" href="css/overlays.css">
+  <link rel="stylesheet" href="css/settings.css">
 </head>
 <body>
   <canvas id="stage" aria-label="音乐频谱可视化画布"></canvas>
@@ -33,7 +38,7 @@
 
   <section class="dock ui" id="dock" aria-label="控制面板">
     <div class="dock-row sources">
-      <button class="chip chip-demo" id="btnDemo" type="button">
+      <button class="chip chip-demo" id="btnDemo" type="button" aria-label="播放演示曲目">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M9 18V6l10-2v12" />
           <circle cx="6.5" cy="18" r="2.5" />
@@ -41,13 +46,13 @@
         </svg>
         <span>演示曲目</span>
       </button>
-      <button class="chip" id="btnFile" type="button">
+      <button class="chip" id="btnFile" type="button" aria-label="选择本地音频文件">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 16V4M7 9l5-5 5 5M5 20h14" />
         </svg>
         <span>本地音频</span>
       </button>
-      <button class="chip" id="btnMic" type="button">
+      <button class="chip" id="btnMic" type="button" aria-label="使用麦克风输入">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <rect x="9" y="3" width="6" height="11" rx="3" />
           <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
@@ -87,11 +92,11 @@
     </div>
 
     <div class="dock-row mode-row" role="group" aria-label="视觉模式">
-      <button class="mode is-active" type="button" data-mode="0">环形频谱</button>
-      <button class="mode" type="button" data-mode="1">镜像波形</button>
-      <button class="mode" type="button" data-mode="2">粒子星系</button>
-      <button class="mode" type="button" data-mode="3">律动封面环</button>
-      <button class="mode" type="button" data-mode="4">3D波形地形</button>
+      <button class="mode is-active" type="button" data-mode="0" aria-label="视觉模式：环形频谱" aria-pressed="true">环形频谱</button>
+      <button class="mode" type="button" data-mode="1" aria-label="视觉模式：镜像波形" aria-pressed="false">镜像波形</button>
+      <button class="mode" type="button" data-mode="2" aria-label="视觉模式：粒子星系" aria-pressed="false">粒子星系</button>
+      <button class="mode" type="button" data-mode="3" aria-label="视觉模式：律动封面环" aria-pressed="false">律动封面环</button>
+      <button class="mode" type="button" data-mode="4" aria-label="视觉模式：3D波形地形" aria-pressed="false">3D波形地形</button>
     </div>
   </section>
 

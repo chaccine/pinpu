@@ -1,5 +1,5 @@
 /* 主题面板：顶栏调色板按钮 + 浮层色块列表，点击切换主题；当前主题高亮。 */
-/* 面板 DOM 由本模块动态构建，避免污染 index.html；样式见 style.css 的 .theme-* 。 */
+/* 面板 DOM 由本模块动态构建，避免污染 index.html；样式见 css/theme-panel.css 。 */
 
 import { THEMES } from '../theme.js';
 import { subscribe, getState } from '../state.js';

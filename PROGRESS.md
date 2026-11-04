@@ -31,5 +31,19 @@
 - 测试：**PASS=60 FAIL=0 SKIP=4 总计=64**（仅 `渲染器`、`持久化` 两项按 features 能力位 SKIP）；控制台无 error/warning、无 404。
 - 下一步：阶段 3，WebGL 渲染器、持久化、设置面板、性能与无障碍。
 
+## 阶段 3：WebGL 渲染器 / 持久化 / 设置面板 / 性能与无障碍
+- 完成时间：2026-11-04
+- 产出：
+  - WebGL：新增 `render/webgl.js`，透明叠加画布 + 透明 2D 背景层。星系模式用 GPU 点精灵（顶点着色器轨道运动 + 节拍脉冲），地形模式用网格顶点着色器采样历史频谱纹理（环形缓冲逐行上传）。WebGL2 → WebGL1（无顶点纹理时回退 2D）→ Canvas2D 自动降级；`?renderer=2d` 强制 2D；上下文丢失自动切 2D、恢复后重建；`__pinpu.renderer` 实时反映。
+  - 持久化：`storage.js` 统一 `pinpu.v2.` 前缀与 schemaVersion，`settings.js` 默认值/清洗/重置；保存主题、模式、音量、静音、循环模式、渲染器偏好、灵敏度、平滑、柱数、粒子密度、FPS 显示、播放列表开关与「仅文件名」；播放列表文件不持久，刷新后显示占位行并提示重新添加；URL `?mode=&theme=&renderer=` 覆盖。
+  - 快捷键/帮助：`shortcuts.js` 单一配置表同时驱动按键分发与帮助浮层；Esc 依次关闭帮助/设置/播放列表/沉浸。
+  - 性能：页面隐藏或窗口失焦停帧，暂停时主循环限 32ms（30fps）；自适应画质高/中/低（连续 2 次 <45fps 降档，连续 3 次 >55fps 升档，2s 采样；手动锁定）；分辨率上限、粒子/辉光/柱数随档位缩放；渐变缓存（按色相桶+几何桶，上限 96）；30 次切歌后 GC 堆 3079→3149KB（+71KB，无线性泄漏）；iOS AudioContext 解锁失败时提示再次点击。
+  - 无障碍：模式/按钮 aria-label 与 aria-pressed、播放列表/设置面板焦点与 Esc、prefers-reduced-motion 降低动效、桌面/窄屏/横屏/低高度四类视口适配。
+  - 设置面板：齿轮按钮，画质自动/高/中/低、柱数少/中/多、粒子密度、灵敏度 0.5–2、平滑 0–0.9、FPS 开关、渲染器自动/2D（提示重载生效）、恢复默认。
+  - 结构：`style.css`(1649 行) 拆为 `css/` 下 6 个文件（base/theme-panel/dock/playlist/overlays/settings，最大 580 行），全部代码文件 <600 行。
+- 测试：`test/run_all.py` **PASS=68 FAIL=0 SKIP=0**；控制台零 error/warning、零 404；WebGL 星系/地形、上下文丢失恢复、强制 2D、设置与刷新恢复、暂停 30fps、移动端设置面板均手动验证。
+- 环境说明：headless Chrome + SwiftShader 截图读回会打印 `GL Driver Message ... ReadPixels/GL_CLOSE_PATH` 驱动性能警告，属读回环境噪声，测试监听已精确过滤，应用自身无告警。
+- 下一步：阶段 4，5 模式 × 4 主题 × 桌面/手机 40 张截图自检并修复。
+
 ## 已知问题
 （暂无）
