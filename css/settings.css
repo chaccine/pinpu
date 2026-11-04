@@ -92,6 +92,20 @@
   box-shadow: 0 0 14px rgba(92, 225, 255, 0.35);
 }
 
+/* 五档自动切换：等分按钮，窄屏可换行 */
+.sp-autoswitch {
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.sp-autoswitch .seg-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-left: 3px;
+  padding-right: 3px;
+  white-space: nowrap;
+}
+
 .sp-row input[type="range"] {
   width: 100%;
   height: 4px;

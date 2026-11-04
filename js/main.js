@@ -15,11 +15,12 @@ import { initHelpPanel } from './ui/help.js';
 import { initSettingsPanel } from './ui/settings-panel.js';
 import { initLyrics } from './ui/lyrics.js';
 import { initDrop } from './drop.js';
-import { readLrcFile, matchLrcFiles, isLrcFile } from './lyrics/source.js';
+import { readLrcFile, isLrcFile, bindLrcFiles } from './lyrics/source.js';
 import { ThemeController, applyThemeCSS, THEMES } from './theme.js';
 import { SHORTCUTS } from './shortcuts.js';
 import { settings, updateSettings, resetSettings, barsCountFor, DEFAULT_SETTINGS } from './settings.js';
 import { createQualityManager } from './quality.js';
+import { createAutoSwitcher } from './autoswitch.js';
 
 const MODE_COUNT = 5;
 
@@ -27,7 +28,7 @@ const MODE_COUNT = 5;
 const features = {
   themes: true, fiveModes: true, playlist: true,
   id3: true, webgl: true, help: true, persist: true, settings: true, url: true,
-  lyrics: true,
+  lyrics: true, autoSwitch: true,
 };
 
 // URL 分享参数（可选加分）：?mode=3&theme=sunset 优先于本地设置
@@ -65,6 +66,11 @@ const engine = new AudioEngine({
 engine.setBeatSensitivity(settings.sensitivity);
 const playlist = new Playlist(engine);
 const renderer = createRenderer(canvas, engine, { prefer2d: settings.renderer === '2d' });
+const autoSwitcher = createAutoSwitcher({
+  modeCount: MODE_COUNT, getMode: () => getState().mode, setMode: (mode) => setState({ mode }),
+  getEnergy: () => engine.frame.energy, now: () => performance.now() / 1000,
+});
+autoSwitcher.setPolicy(settings.autoSwitch);
 const toast = createToast($('#toast'));
 const lyrics = initLyrics({
   getTime: () => engine.playhead,
@@ -154,6 +160,7 @@ function applySetting(key, value) {
     settingsPanel.setFps(0, renderer.kind, false);
   }
   else if (key === 'showLyrics') lyrics.setEnabled(!!value);
+  else if (key === 'autoSwitch') autoSwitcher.setPolicy(value);
 }
 
 function resetAllSettings() {
@@ -170,6 +177,7 @@ function resetAllSettings() {
   engine.setVolume(DEFAULT_SETTINGS.volume);
   engine.setMuted(DEFAULT_SETTINGS.muted);
   lyrics.setEnabled(DEFAULT_SETTINGS.showLyrics);
+  autoSwitcher.setPolicy(DEFAULT_SETTINGS.autoSwitch);
   playlist.setLoopMode(DEFAULT_SETTINGS.loopMode);
   qualityManager.setDensity(DEFAULT_SETTINGS.density);
   qualityManager.setMode(DEFAULT_SETTINGS.quality);
@@ -240,7 +248,9 @@ const actions = {
   setMode(i) {
     const n = Number(i);
     if (!Number.isFinite(n)) return;
-    setState({ mode: clamp(Math.round(n), 0, MODE_COUNT - 1) });
+    const mode = clamp(Math.round(n), 0, MODE_COUNT - 1);
+    if (mode !== getState().mode) autoSwitcher.notifyManualSwitch();
+    setState({ mode });
   },
   async startDemo() {
     const ok = await engine.startDemo();
@@ -256,7 +266,7 @@ const actions = {
     const lrcs = arr.filter((f) => isLrcFile(f));
     const ignored = arr.length - audio.length - lrcs.length;
     const n = playlist.addFiles(audio);
-    const bound = lrcs.length ? await bindLyrics(audio, lrcs) : 0;
+    const bound = lrcs.length ? await bindLrcFiles(audio, lrcs, playlist) : 0;
     const parts = [];
     if (n > 0) parts.push(`已加入 ${n} 首曲目`);
     if (bound > 0) parts.push(`已绑定 ${bound} 份歌词`);
@@ -356,25 +366,6 @@ const actions = {
     helpPanel.toggle();
   },
 };
-
-// ---- 歌词绑定：拖入音频+同名 .lrc / 文件夹时按「同目录/同基名」配对 ----
-async function bindLyrics(audioFiles, lrcFiles) {
-  const pool = audioFiles.length
-    ? audioFiles
-    : playlist.items.map((it) => it.file).filter(Boolean);
-  let pairs = matchLrcFiles(pool, lrcFiles);
-  // 单独拖入一份歌词时无条件应用到当前曲目
-  if (!pairs.length && !audioFiles.length && lrcFiles.length === 1
-      && playlist.current && playlist.current.file) {
-    pairs = [{ audio: playlist.current.file, lrc: lrcFiles[0] }];
-  }
-  let bound = 0;
-  for (const { audio, lrc } of pairs) {
-    const text = await readLrcFile(lrc);
-    if (text && playlist.setLyrics(audio, text)) bound++;
-  }
-  return bound;
-}
 
 // ---- 装配 UI ----
 const dock = initDock({ engine, actions, autohide, playlist });
@@ -486,6 +477,7 @@ function frame(ts) {
   }
 
   engine.update(dt, ts / 1000);
+  autoSwitcher.update(dt, { energy: engine.frame.energy, playing, beat: 0 });
   themeCtrl.update(dt);
   renderer.render(dt);
   dock.updateTransport();
@@ -550,6 +542,7 @@ function exposeDebugApi() {
     get lyricsLine() { return lyrics.currentText(); },
     get lyricsLineIndex() { return lyrics.currentIndex(); },
     get showLyrics() { return !!settings.showLyrics; },
+    get autoSwitch() { return autoSwitcher.getState(); },
     features,
     setMode: (i) => actions.setMode(i),
     setTheme: (id) => actions.setTheme(id),
@@ -563,6 +556,21 @@ function exposeDebugApi() {
       applySetting('showLyrics', !!v);
       if (settingsPanel) settingsPanel.refresh();
       return !!settings.showLyrics;
+    },
+    setAutoSwitch: (policy) => {
+      const p = autoSwitcher.setPolicy(policy);
+      updateSettings({ autoSwitch: p });
+      if (settingsPanel) settingsPanel.refresh();
+      return p;
+    },
+    tickAutoSwitch: (seconds, energy) => {
+      const e = Number(energy);
+      autoSwitcher.update(Number(seconds) || 0, {
+        energy: Number.isFinite(e) ? e : engine.frame.energy,
+        playing: getState().playing,
+        beat: 0,
+      });
+      return getState().mode;
     },
   };
   try {

@@ -72,6 +72,23 @@ input:focus-visible {
   pointer-events: none;
 }
 
+/* 模式切换快照层：覆盖旧画面并淡出，位于 WebGL 叠加层之上、暗角之下 */
+.stage-fade {
+  position: fixed;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.stage-fade[hidden] {
+  display: none;
+}
+
 .vignette {
   position: fixed;
   inset: 0;

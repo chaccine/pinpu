@@ -102,3 +102,26 @@ export function matchLrcFiles(audioFiles, otherFiles) {
   }
   return pairs;
 }
+
+// 拖入音频 + 歌词（或单独一份歌词）时配对并写入播放列表；返回成功绑定数
+export async function bindLrcFiles(audioFiles, lrcFiles, playlist) {
+  if (!playlist) return 0;
+  const audios = Array.from(audioFiles || []).filter(Boolean);
+  const lrcs = Array.from(lrcFiles || []).filter(isLrcFile);
+  if (!lrcs.length) return 0;
+  const pool = audios.length
+    ? audios
+    : playlist.items.map((it) => it.file).filter(Boolean);
+  let pairs = matchLrcFiles(pool, lrcs);
+  // 单独拖入一份歌词时无条件应用到当前曲目
+  if (!pairs.length && !audios.length && lrcs.length === 1
+      && playlist.current && playlist.current.file) {
+    pairs = [{ audio: playlist.current.file, lrc: lrcs[0] }];
+  }
+  let bound = 0;
+  for (const { audio, lrc } of pairs) {
+    const text = await readLrcFile(lrc);
+    if (text && playlist.setLyrics(audio, text)) bound++;
+  }
+  return bound;
+}

@@ -20,6 +20,7 @@ from harness import (
     ROOT, BASE, FIX, CHROME, CHROME_ARGS,
     Report, PageHarness, measure_fps, start_server, stop_server,
 )
+from autoswitch_checks import v2_autoswitch_checks
 
 
 # ---------------------------------------------------------------------------
@@ -50,29 +51,21 @@ def static_checks(rep):
             too_long.append(f"{os.path.relpath(path, ROOT)}={n}")
     rep.ok("代码文件均<600行", not too_long, ", ".join(too_long[:4]))
 
-    node_test = os.path.join(ROOT, "test", "id3_node_test.mjs")
-    try:
-        r = subprocess.run(["node", node_test], cwd=ROOT, capture_output=True,
-                           text=True, timeout=60)
-        passes = r.stdout.count("[PASS]")
-        fails = r.stdout.count("[FAIL]")
-        rep.ok("ID3 Node单元测试(标题/歌手/封面/损坏容错)",
-               r.returncode == 0 and fails == 0 and passes >= 10,
-               f"PASS={passes} FAIL={fails}")
-    except Exception as e:
-        rep.ok("ID3 Node单元测试(标题/歌手/封面/损坏容错)", False, str(e))
-
-    lrc_test = os.path.join(ROOT, "test", "lrc_node_test.mjs")
-    try:
-        r = subprocess.run(["node", lrc_test], cwd=ROOT, capture_output=True,
-                           text=True, timeout=60)
-        passes = r.stdout.count("[PASS]")
-        fails = r.stdout.count("[FAIL]")
-        rep.ok("LRC Node单元测试(时间戳/多标签/offset/排序/边界)",
-               r.returncode == 0 and fails == 0 and passes >= 20,
-               f"PASS={passes} FAIL={fails}")
-    except Exception as e:
-        rep.ok("LRC Node单元测试(时间戳/多标签/offset/排序/边界)", False, str(e))
+    node_tests = [
+        ("test/id3_node_test.mjs", "ID3 Node单元测试(标题/歌手/封面/损坏容错)", 10),
+        ("test/lrc_node_test.mjs", "LRC Node单元测试(时间戳/多标签/offset/排序/边界)", 20),
+        ("test/autoswitch_node_test.mjs", "自动切换 Node单元测试(定时/暂停/突增/防抖/轮换)", 15),
+    ]
+    for rel, label, min_pass in node_tests:
+        try:
+            r = subprocess.run(["node", os.path.join(ROOT, rel)], cwd=ROOT,
+                               capture_output=True, text=True, timeout=60)
+            passes = r.stdout.count("[PASS]")
+            fails = r.stdout.count("[FAIL]")
+            rep.ok(label, r.returncode == 0 and fails == 0 and passes >= min_pass,
+                   f"PASS={passes} FAIL={fails}")
+        except Exception as e:
+            rep.ok(label, False, str(e))
 
 
 # ---------------------------------------------------------------------------
@@ -531,6 +524,7 @@ async def run_context(browser, is_mobile, rep):
     await v2_id3_checks(h)
     await v2_lyrics_checks(h)
     await v2_renderer_checks(h)
+    await v2_autoswitch_checks(h)
     await v2_persist_checks(h)
     await v2_shortcut_help(h)
     await v2_autohide_checks(h, is_mobile)

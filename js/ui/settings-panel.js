@@ -50,6 +50,10 @@ export function initSettingsPanel({ settings, onPatch, onReset, toast }) {
     + '<label class="sp-check"><input type="checkbox" id="spFps" aria-label="显示帧率"><span>FPS</span></label></div>'
     + '<div class="sp-row"><span class="sp-label">显示歌词</span>'
     + '<label class="sp-check"><input type="checkbox" id="spLyrics" aria-label="显示歌词"><span>歌词</span></label></div>'
+    + '<div class="sp-row sp-col"><span class="sp-label">自动切换模式</span>'
+    + segmented([{ id: 'off', label: '关闭' }, { id: '15', label: '15秒' }, { id: '30', label: '30秒' },
+      { id: '60', label: '60秒' }, { id: 'surge', label: '能量突增' }], settings.autoSwitch, 'sp-autoswitch')
+    + '</div>'
     + '<div class="sp-row"><span class="sp-label">渲染器</span>'
     + segmented([{ id: 'auto', label: '自动' }, { id: '2d', label: '2D' }], settings.renderer, 'sp-renderer')
     + '</div>'
@@ -85,7 +89,8 @@ export function initSettingsPanel({ settings, onPatch, onReset, toast }) {
     panel.querySelector('#spSensVal').textContent = Number(settings.sensitivity).toFixed(2);
     panel.querySelector('#spSmoothVal').textContent = Number(settings.smoothing).toFixed(2);
     [['.sp-quality', settings.quality], ['.sp-bars', settings.barsLevel],
-      ['.sp-density', settings.density], ['.sp-renderer', settings.renderer]].forEach(([sel, val]) => {
+      ['.sp-density', settings.density], ['.sp-renderer', settings.renderer],
+      ['.sp-autoswitch', settings.autoSwitch]].forEach(([sel, val]) => {
       panel.querySelectorAll(`${sel} .seg-btn`).forEach((b) => {
         const on = b.dataset.value === val;
         b.classList.toggle('is-active', on);
@@ -110,6 +115,7 @@ export function initSettingsPanel({ settings, onPatch, onReset, toast }) {
       if (seg.classList.contains('sp-quality')) onPatch('quality', val);
       else if (seg.classList.contains('sp-bars')) onPatch('barsLevel', val);
       else if (seg.classList.contains('sp-density')) onPatch('density', val);
+      else if (seg.classList.contains('sp-autoswitch')) onPatch('autoSwitch', val);
       else if (seg.classList.contains('sp-renderer')) {
         onPatch('renderer', val);
         toast(val === '2d' ? '已选择 Canvas2D，刷新后生效' : '已选择自动渲染，刷新后生效');

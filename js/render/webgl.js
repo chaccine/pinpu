@@ -225,6 +225,7 @@ export class WebGLRenderer {
     const opts = {
       alpha: true, antialias: true, premultipliedAlpha: true,
       depth: false, stencil: false, powerPreference: 'high-performance',
+      preserveDrawingBuffer: true,   // 模式切换时抓取上一帧做淡出快照
     };
     try {
       this.gl = this.glCanvas.getContext('webgl2', opts);

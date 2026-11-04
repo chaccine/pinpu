@@ -3,6 +3,7 @@
 
 import { load, save, clearAll, schemaVersion, writeSchema, SCHEMA_VERSION } from './storage.js';
 import { isMobile } from './utils.js';
+import { AUTO_SWITCH_POLICIES } from './autoswitch.js';
 
 export const DEFAULT_SETTINGS = {
   theme: 'neon',
@@ -17,6 +18,7 @@ export const DEFAULT_SETTINGS = {
   density: 'mid',
   showFps: false,
   showLyrics: true,
+  autoSwitch: 'off',
   quality: 'auto',
   playlistOpen: false,
   playlistNames: [],
@@ -55,6 +57,7 @@ export function sanitizeSettings(raw) {
     density: oneOf(r.density, LEVELS, DEFAULT_SETTINGS.density),
     showFps: typeof r.showFps === 'boolean' ? r.showFps : DEFAULT_SETTINGS.showFps,
     showLyrics: typeof r.showLyrics === 'boolean' ? r.showLyrics : DEFAULT_SETTINGS.showLyrics,
+    autoSwitch: oneOf(r.autoSwitch, AUTO_SWITCH_POLICIES, DEFAULT_SETTINGS.autoSwitch),
     quality: oneOf(r.quality, QUALITIES, DEFAULT_SETTINGS.quality),
     playlistOpen: typeof r.playlistOpen === 'boolean' ? r.playlistOpen : DEFAULT_SETTINGS.playlistOpen,
     playlistNames: names,
