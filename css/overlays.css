@@ -134,7 +134,7 @@ body.ui-hidden .help-panel {
 
   .mode-row {
     display: flex;
-    gap: 4px;
+    gap: 3px;
     overflow-x: auto;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
@@ -145,9 +145,11 @@ body.ui-hidden .help-panel {
   }
 
   .mode {
-    flex: 1 0 auto;
-    min-width: 72px;
-    padding: 0 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 0 4px;
+    font-size: 12px;
+    letter-spacing: 0;
     white-space: nowrap;
   }
 
@@ -186,6 +188,17 @@ body.ui-hidden .help-panel {
 
   .np-marquee {
     font-size: 11.5px;
+  }
+}
+
+@media (max-width: 380px) {
+  .mode-row {
+    gap: 2px;
+  }
+
+  .mode {
+    padding: 0 3px;
+    font-size: 11px;
   }
 }
 

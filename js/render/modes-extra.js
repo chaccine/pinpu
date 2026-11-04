@@ -51,11 +51,12 @@ export function drawCoverRing(r, dt) {
     g.drawImage(r.coverImg, -iw * s / 2, -ih * s / 2, iw * s, ih * s);
   } else {
     const hb = r.hueBucket(hueBase);
-    const grad = r.grad(`cr:${hb}:${Math.round(R)}`, () => {
+    // 无封面时的渐变唱片：色相偏移跟随主题 spread，避免落日等窄色相主题出现撞色绿盘
+    const grad = r.grad(`cr:${hb}:${Math.round(spread)}:${Math.round(R)}`, () => {
       const gr = g.createRadialGradient(0, 0, 0, 0, 0, R);
-      gr.addColorStop(0, `hsla(${hueOf(hb + 20)}, 90%, 60%, 0.9)`);
-      gr.addColorStop(0.6, `hsla(${hueOf(hb + 60)}, 80%, 34%, 0.85)`);
-      gr.addColorStop(1, `hsla(${hueOf(hb + 120)}, 70%, 16%, 0.9)`);
+      gr.addColorStop(0, `hsla(${hueOf(hb + 12)}, 90%, 58%, 0.9)`);
+      gr.addColorStop(0.6, `hsla(${hueOf(hb + spread * 2.4)}, 84%, 36%, 0.88)`);
+      gr.addColorStop(1, `hsla(${hueOf(hb + spread * 4.5)}, 76%, 15%, 0.92)`);
       return gr;
     });
     g.fillStyle = grad;
@@ -140,6 +141,8 @@ export function drawTerrain(r, dt) {
   }
 
   const camX = reduced ? 0 : Math.sin(r.time * 0.27) * W * 0.009;
+  g.save();
+  g.globalCompositeOperation = 'lighter';
   g.lineJoin = 'round';
 
   // 从最旧一行画到最新一行（远 → 近）
@@ -152,7 +155,7 @@ export function drawTerrain(r, dt) {
     const y0 = horizon + t * t * depthSpan;
     const lift = beatPulse * r.stageUnit * 0.015 * t * (reduced ? 0.3 : 1);
     const amp = r.stageUnit * 0.16 * (0.25 + t) * (1 + beatPulse * 0.35);
-    const alpha = 0.08 + t * 0.72;
+    const alpha = 0.10 + t * 0.60;
     const hue = hueOf(hueBase + (1 - t) * spread * 6);
     const rowX = cx + camX * (0.4 + t);
     const posBase = rowIdx * COLS * 2;
@@ -168,8 +171,8 @@ export function drawTerrain(r, dt) {
       st.pos[posBase + c * 2 + 1] = y;
       if (c === 0) g.moveTo(x, y); else g.lineTo(x, y);
     }
-    g.strokeStyle = `hsla(${hue}, 92%, ${48 + t * 22}%, ${alpha})`;
-    g.lineWidth = 1 + t * 2.2;
+    g.strokeStyle = `hsla(${hue}, 92%, ${50 + t * 20}%, ${alpha})`;
+    g.lineWidth = 1.1 + t * 2.1;
     g.stroke();
 
     // 近处行下方补一条更暗的投影线，增强纵深
@@ -199,9 +202,11 @@ export function drawTerrain(r, dt) {
       const y = st.pos[rowIdx * COLS * 2 + c * 2 + 1];
       if (!started) { g.moveTo(x, y); started = true; } else g.lineTo(x, y);
     }
-    g.strokeStyle = `hsla(${hueOf(hueBase + spread * 3)}, 90%, 60%, 0.10)`;
+    g.strokeStyle = `hsla(${hueOf(hueBase + spread * 3)}, 90%, 60%, 0.16)`;
     g.stroke();
   }
+
+  g.restore();
 
   // 地平线辉光
   drawTerrainGlow(r);
@@ -218,7 +223,7 @@ export function drawTerrainGlow(r) {
   const glow = r.grad(`tg:${hb}:${pb}:${W}:${Math.round(horizon)}`, () => {
     const gr = g.createLinearGradient(0, horizon - 40, 0, horizon + 30);
     gr.addColorStop(0, `hsla(${hueOf(hb)}, 90%, 60%, 0)`);
-    gr.addColorStop(0.7, `hsla(${hueOf(hb)}, 90%, 60%, ${0.10 + pb * 0.10})`);
+    gr.addColorStop(0.7, `hsla(${hueOf(hb)}, 90%, 62%, ${0.14 + pb * 0.12})`);
     gr.addColorStop(1, `hsla(${hueOf(hb)}, 90%, 60%, 0)`);
     return gr;
   });

@@ -87,9 +87,9 @@ void main() {
   gl_Position = vec4(x, y, 0.0, 1.0);
   float hue;
   if (aKind < 0.5) {
-    vAlpha = 0.08 + t * 0.72;
+    vAlpha = 0.10 + t * 0.60;
     hue = uHueBase + (1.0 - t) * uSpread * 6.0;
-    vColor = hsv2rgb(vec3(fract(hue / 360.0), 0.92, 0.48 + t * 0.22));
+    vColor = hsv2rgb(vec3(fract(hue / 360.0), 0.92, 0.50 + t * 0.20));
   } else {
     vAlpha = uVertAlpha;
     hue = uHueBase + uSpread * 3.0;
@@ -498,7 +498,7 @@ export class WebGLRenderer {
     gl.uniform1f(u.uBeat, f.beatPulse);
     gl.uniform1f(u.uHueBase, inner.baseHue());
     gl.uniform1f(u.uSpread, inner.theme.spread);
-    gl.uniform1f(u.uVertAlpha, 0.12);
+    gl.uniform1f(u.uVertAlpha, 0.16);
     gl.drawArrays(gl.LINES, 0, this._lineCount);
   }
 
