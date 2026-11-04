@@ -150,8 +150,9 @@
 
 .fps-meter {
   position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 16px);
-  left: 14px;
+  /* 位于顶栏（标题）正下方，避免与左上角标题/标签重叠 */
+  top: calc(env(safe-area-inset-top, 0px) + 62px);
+  left: 18px;
   z-index: 6;
   padding: 4px 9px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -182,6 +183,11 @@ body.is-immersive .settings-panel {
 }
 
 @media (max-width: 620px) {
+  .fps-meter {
+    top: calc(env(safe-area-inset-top, 0px) + 56px);
+    left: 13px;
+  }
+
   .settings-panel {
     top: auto;
     right: 9px;

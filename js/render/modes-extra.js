@@ -1,7 +1,7 @@
 /* 扩展视觉模式：模式3「律动封面环」与模式4「3D波形地形」。 */
 /* 以函数形式接收渲染器实例 r，复用其 2d 上下文、分析帧、主题与发光贴图，避免 canvas2d 超行数。 */
 
-import { TAU, clamp, hueOf } from '../utils.js';
+import { TAU, clamp, hueOf, isMobile } from '../utils.js';
 import { getState } from '../state.js';
 
 // ---- 模式3：律动封面环 ----
@@ -96,7 +96,16 @@ export function drawCoverRing(r, dt) {
 }
 
 // ---- 模式4：3D 波形地形 ----
-// 环形缓冲区保存最近若干帧频谱，按透视网格从远到近绘制，形成向观察者滚动的 synthwave 地形。
+// 环形缓冲区保存最近若干帧频谱，按透视网格从远到近绘制，形成向远处连续滚动的 synthwave 地形。
+// 每行：不透明深色“山体”遮挡后方线条 → 外发光 → 按高度分段上色的亮线（越高越亮、色相越偏）。
+export const TERRAIN_STEP = 0.06;          // 每行采样间隔（秒），行间做连续插值滚动
+export const TERRAIN_AMP = 0.26;           // 峰高占 stageUnit 的比例
+export function terrainDims(isShort, barsLen) {
+  return { rows: isShort ? 18 : 26, cols: Math.min(barsLen, isShort ? 40 : 56) };
+}
+// 行深度因子：0 远，1 近；frac 为两次采样之间的滚动进度，使行连续后退
+export const terrainT = (age, frac, rows) => Math.max(0, 1 - (age + frac) / (rows - 1));
+
 function ensureTerrainState(r, rows, cols) {
   let st = r.terrainState;
   if (!st || st.rows !== rows || st.cols !== cols) {
@@ -104,12 +113,15 @@ function ensureTerrainState(r, rows, cols) {
       rows, cols,
       buf: new Float32Array(rows * cols),
       pos: new Float32Array(rows * cols * 2),
+      hv: new Float32Array(cols),
       idx: 0, acc: 0,
     };
     r.terrainState = st;
   }
   return st;
 }
+
+const BANDS = 4;
 
 export function drawTerrain(r, dt) {
   const g = r.g;
@@ -120,18 +132,19 @@ export function drawTerrain(r, dt) {
   const spread = r.theme.spread;
   const W = r.W, H = r.H;
   const cx = W / 2;
-  const horizon = r.centerY() - r.stageUnit * 0.16;
-  const depthSpan = clamp(H - horizon - 40, 120, r.stageUnit * 0.62);
+  const unit = r.stageUnit;
+  const horizon = r.centerY() - unit * 0.16;
+  const depthSpan = clamp(H - horizon - 40, 120, unit * 0.62);
 
-  const ROWS = r.isShort ? 16 : 22;
-  const COLS = Math.min(bars.length, r.isShort ? 40 : 56);
+  const { rows: ROWS, cols: COLS } = terrainDims(r.isShort, bars.length);
   const st = ensureTerrainState(r, ROWS, COLS);
   const reduced = r.reducedMotion;
+  const lw = r.isShort || isMobile() ? 0.8 : 1;
 
-  // 采样当前频谱写入历史（约 20 帧/秒，降低滚动手感突兀）
   st.acc += dt;
-  if (st.acc >= 0.045) {
-    st.acc = 0;
+  if (st.acc >= TERRAIN_STEP) {
+    st.acc -= TERRAIN_STEP;
+    if (st.acc > TERRAIN_STEP) st.acc = 0;
     const base = st.idx * COLS;
     for (let c = 0; c < COLS; c++) {
       const bi = Math.min(bars.length - 1, Math.floor((c / COLS) * (bars.length - 1)));
@@ -139,70 +152,98 @@ export function drawTerrain(r, dt) {
     }
     st.idx = (st.idx + 1) % ROWS;
   }
+  const frac = reduced ? 0 : st.acc / TERRAIN_STEP;
 
   const camX = reduced ? 0 : Math.sin(r.time * 0.27) * W * 0.009;
   g.save();
-  g.globalCompositeOperation = 'lighter';
   g.lineJoin = 'round';
+  g.lineCap = 'round';
 
-  // 从最旧一行画到最新一行（远 → 近）
   for (let age = ROWS - 1; age >= 0; age--) {
     const rowIdx = ((st.idx - 1 - age) % ROWS + ROWS) % ROWS;
     const rowBase = rowIdx * COLS;
-    const t = 1 - age / (ROWS - 1);       // 0 远，1 近
+    const t = terrainT(age, frac, ROWS);
+    const fade = Math.min(1, t / 0.16);              // 地平线处淡出
     const scale = 0.22 + t * 1.05;
     const halfW = (W * 0.46) * scale;
     const y0 = horizon + t * t * depthSpan;
-    const lift = beatPulse * r.stageUnit * 0.015 * t * (reduced ? 0.3 : 1);
-    const amp = r.stageUnit * 0.16 * (0.25 + t) * (1 + beatPulse * 0.35);
-    const alpha = 0.10 + t * 0.60;
-    const hue = hueOf(hueBase + (1 - t) * spread * 6);
+    const lift = beatPulse * unit * 0.015 * t * (reduced ? 0.3 : 1);
+    const amp = unit * TERRAIN_AMP * (0.3 + t) * (1 + beatPulse * 0.35);
+    const rowHue = hueBase + (1 - t) * spread * 6;
     const rowX = cx + camX * (0.4 + t);
     const posBase = rowIdx * COLS * 2;
+    const drop = depthSpan * (2 * t + 0.12) / (ROWS - 1) * 1.35;
+    const hv = st.hv;
+    let minY = y0;
 
-    g.beginPath();
     for (let c = 0; c < COLS; c++) {
       const u = c / (COLS - 1);
-      const env = Math.sin(u * Math.PI);
-      const v = st.buf[rowBase + c] * env;
+      const h = Math.pow(st.buf[rowBase + c], 0.85) * Math.sin(u * Math.PI);
+      hv[c] = h;
       const x = rowX - halfW + u * halfW * 2;
-      const y = y0 - v * amp - lift;
+      const y = y0 - h * amp - lift;
       st.pos[posBase + c * 2] = x;
       st.pos[posBase + c * 2 + 1] = y;
-      if (c === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      if (y < minY) minY = y;
     }
-    g.strokeStyle = `hsla(${hue}, 92%, ${50 + t * 20}%, ${alpha})`;
-    g.lineWidth = 1.1 + t * 2.1;
-    g.stroke();
 
-    // 近处行下方补一条更暗的投影线，增强纵深
-    if (t > 0.55) {
-      g.strokeStyle = `hsla(${hue}, 90%, 30%, ${(t - 0.55) * 0.35})`;
-      g.lineWidth = 1;
-      g.beginPath();
-      for (let c = 0; c < COLS; c++) {
-        const x = st.pos[posBase + c * 2];
-        const y = st.pos[posBase + c * 2 + 1] + 6 * t;
-        if (c === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    // 山体：深色渐变面，遮挡后方行，顶部带一点高度色
+    g.globalCompositeOperation = 'source-over';
+    const body = g.createLinearGradient(0, minY, 0, y0 + drop);
+    body.addColorStop(0, `hsla(${hueOf(rowHue + spread * 3)}, 80%, ${14 + t * 8}%, ${0.9 * fade})`);
+    body.addColorStop(1, `hsla(${hueOf(rowHue)}, 70%, 5%, ${0.94 * fade})`);
+    g.beginPath();
+    g.moveTo(st.pos[posBase], y0 + drop);
+    for (let c = 0; c < COLS; c++) g.lineTo(st.pos[posBase + c * 2], st.pos[posBase + c * 2 + 1]);
+    g.lineTo(st.pos[posBase + (COLS - 1) * 2], y0 + drop);
+    g.closePath();
+    g.fillStyle = body;
+    g.fill();
+
+    // 亮线：按高度分 BANDS 段，越高色相越偏、越亮
+    g.globalCompositeOperation = 'lighter';
+    const w = (1.8 + t * 3.8) * lw;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let b = 0; b < BANDS; b++) {
+        g.beginPath();
+        let any = false;
+        for (let c = 0; c < COLS - 1; c++) {
+          const hm = (hv[c] + hv[c + 1]) * 0.5;
+          const bi = Math.min(BANDS - 1, Math.floor(hm * 1.6 * BANDS));
+          if (bi !== b) continue;
+          g.moveTo(st.pos[posBase + c * 2], st.pos[posBase + c * 2 + 1]);
+          g.lineTo(st.pos[posBase + c * 2 + 2], st.pos[posBase + c * 2 + 3]);
+          any = true;
+        }
+        if (!any) continue;
+        const bf = b / (BANDS - 1);
+        const hue = hueOf(rowHue + bf * spread * 4);
+        const light = 50 + t * 8 + bf * 22;
+        if (pass === 0) {
+          g.strokeStyle = `hsla(${hue}, 100%, ${light}%, ${0.16 * fade * r.quality.glow})`;
+          g.lineWidth = w * 3;
+        } else {
+          g.strokeStyle = `hsla(${hue}, 96%, ${light + 6}%, ${(0.3 + t * 0.7) * fade})`;
+          g.lineWidth = w;
+        }
+        g.stroke();
       }
-      g.stroke();
     }
   }
 
   // 纵向网格线（稀疏），把相邻行连起来增强透视
   const VSTEP = Math.max(4, Math.floor(COLS / 8));
-  g.lineWidth = 1;
+  g.globalCompositeOperation = 'lighter';
+  g.lineWidth = 1.2;
+  g.strokeStyle = `hsla(${hueOf(hueBase + spread * 3)}, 90%, 60%, 0.14)`;
   for (let c = 0; c < COLS; c += VSTEP) {
     g.beginPath();
-    let started = false;
     for (let age = ROWS - 1; age >= 0; age--) {
       const rowIdx = ((st.idx - 1 - age) % ROWS + ROWS) % ROWS;
-      const u = c / (COLS - 1);
       const x = st.pos[rowIdx * COLS * 2 + c * 2];
       const y = st.pos[rowIdx * COLS * 2 + c * 2 + 1];
-      if (!started) { g.moveTo(x, y); started = true; } else g.lineTo(x, y);
+      if (age === ROWS - 1) g.moveTo(x, y); else g.lineTo(x, y);
     }
-    g.strokeStyle = `hsla(${hueOf(hueBase + spread * 3)}, 90%, 60%, 0.16)`;
     g.stroke();
   }
 
@@ -295,26 +336,36 @@ export function drawGalaxyScaffold(r) {
   g.restore();
 }
 
+// 星系整体旋转：累积角度（连续，不会因能量波动而跳变）；内圈略快于外圈，旋臂缓慢卷紧
+const GALAXY_BASE_SPIN = 0.05;      // rad/s，约 2 分钟一圈
+export function advanceGalaxySpin(r, dt) {
+  const energy = r.engine.frame.energy;
+  const k = r.reducedMotion ? 0.3 : 1;
+  r.galaxySpin = (r.galaxySpin || 0) + dt * (GALAXY_BASE_SPIN + energy * 0.03) * k;
+  return r.galaxySpin;
+}
+export const galaxyAngle = (a0, spin, rad) => a0 + spin * (1 + 0.2 * (1 - rad));
+
 function drawGalaxyParticles(r, dt) {
   const g = r.g;
   const { beatPulse, energy } = r.engine.frame;
   const hueBase = r.baseHue();
   const cx = r.W / 2, cy = r.centerY(), unit = r.stageUnit;
   const radius = unit * 0.46;
-  const rotSpeed = 0.1 + energy * 0.9;
+  const spin = advanceGalaxySpin(r, dt);
   const time = r.time;
 
   g.save();
   g.globalCompositeOperation = 'lighter';
   for (let i = 0; i < r.galaxy.length; i++) {
     const p = r.galaxy[i];
-    p.a += dt * rotSpeed * (0.4 + p.spin * 0.9);
-    const rr = p.r * radius * (1 + beatPulse * 0.05 * (0.5 + p.depth));
-    const wob = Math.sin(time * p.wob + p.phase) * unit * 0.012;
-    const x = cx + Math.cos(p.a) * rr + wob;
-    const y = cy + Math.sin(p.a) * rr * 0.72 + wob * 0.6;
-    const size = p.size * (1 + beatPulse * 0.4) * (0.7 + p.depth * 0.7);
-    g.globalAlpha = 0.2 + p.depth * 0.42 + energy * 0.3;
+    const a = galaxyAngle(p.a, spin, p.r);
+    const rr = p.r * radius * (1 + beatPulse * 0.025);
+    const wob = Math.sin(time * p.wob + p.phase) * unit * 0.004;
+    const x = cx + Math.cos(a) * rr + wob;
+    const y = cy + Math.sin(a) * rr * 0.72 + wob * 0.6;
+    const size = p.size * (1 + beatPulse * 0.12) * (0.7 + p.depth * 0.7);
+    g.globalAlpha = Math.min(1, 0.2 + p.depth * 0.42 + energy * 0.2 + beatPulse * 0.22);
     g.drawImage(r.spriteFor(hueBase + p.hueOff), x - size / 2, y - size / 2, size, size);
   }
   g.globalAlpha = 1;

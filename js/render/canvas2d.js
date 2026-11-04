@@ -6,6 +6,7 @@ import { TAU, clamp, hueOf, isMobile, prefersReducedMotion } from '../utils.js';
 import { getState } from '../state.js';
 import { THEMES } from '../theme.js';
 import { drawCoverRing, drawTerrain, drawGalaxy } from './modes-extra.js';
+import { smoothMirrorBars, smoothMirrorWave } from './smooth.js';
 
 const HUE_SEGMENTS = 12;   // 色相分段合批
 const SPRITE_COUNT = 18;   // 预渲染发光贴图数量
@@ -46,6 +47,8 @@ export class Canvas2DRenderer {
     this.quality = { dprCap: 2, particleScale: 1, glow: 1, barsScale: 1 };
     this.reducedMotion = prefersReducedMotion();
     this._gradCache = new Map();
+    this._mirror = {};   // 镜像波形平滑状态
+    this._dt = 1 / 60;
 
     this.buildSprites();
   }
@@ -134,14 +137,14 @@ export class Canvas2DRenderer {
       const r = 0.12 + Math.pow(Math.random(), 0.65) * 0.88;
       const arm = i % 3;
       this.galaxy.push({
-        a: arm * (TAU / 3) + r * 4.4 + (Math.random() - 0.5) * 0.85,
+        a: arm * (TAU / 3) + r * 4.4 + (Math.random() - 0.5) * (0.22 + 0.3 * r),
         r,
-        spin: 0.8 + Math.random() * 0.3,
-        size: 3.5 + Math.random() * 9,
+        spin: 1,
+        size: 3.5 + Math.random() * 8,
         depth: Math.random(),
         phase: Math.random() * TAU,
-        wob: 0.4 + Math.random() * 1.6,
-        hueOff: Math.random() * 160 - 80,
+        wob: 0.15 + Math.random() * 0.35,
+        hueOff: (arm - 1) * 38 + (Math.random() - 0.5) * 16,   // 每条旋臂一个色调，结构清晰
       });
     }
   }
@@ -184,7 +187,8 @@ export class Canvas2DRenderer {
 
   // ---- 节拍爆发 ----
   onBeat(energy) {
-    const count = Math.round(10 + energy * 24);
+    const k = this.mode === 2 ? 0.3 : 1;   // 星系里火花只作点缀，避免喧宾夺主
+    const count = Math.round((10 + energy * 24) * k);
     this.spawnBurst(count);
   }
 
@@ -231,6 +235,7 @@ export class Canvas2DRenderer {
   // ---- 主绘制 ----
   render(dt) {
     this.time += dt;
+    this._dt = Math.min(dt, 0.1);
     this.updateSparks(dt);
     this.drawBackdrop();
     if (this.mode === 0) this.drawRing();
@@ -388,7 +393,8 @@ export class Canvas2DRenderer {
 
   drawMirror() {
     const g = this.g;
-    const { bars, beatPulse, wave } = this.engine.frame;
+    const { beatPulse, wave } = this.engine.frame;
+    const bars = smoothMirrorBars(this._mirror, this.engine.frame.bars, this._dt);
     const hueBase = this.baseHue();
     const spread = this.theme.spread;
     const BARS = bars.length;
@@ -399,10 +405,10 @@ export class Canvas2DRenderer {
     const usable = Math.min(W * 0.92, 1180);
     const x0 = (W - usable) / 2;
     const slot = usable / BARS;
-    const barW = Math.max(2, slot * 0.52);
+    const barW = Math.max(3, slot * 0.6);
     const maxH = (this.isShort || !mobile
       ? Math.min(this.stageUnit * 0.4, 290)
-      : Math.min(H * 0.32, 290)) * (1 + beatPulse * 0.035);
+      : Math.min(H * 0.32, 290)) * (1 + beatPulse * 0.02);
     const segBars = Math.ceil(BARS / HUE_SEGMENTS);
 
     g.save();
@@ -432,7 +438,7 @@ export class Canvas2DRenderer {
         const grow = layer === 0 ? 6 : 3;
         g.beginPath();
         for (let i = from; i < to; i++) {
-          const v = Math.pow(bars[i], 1.15);
+          const v = Math.pow(bars[i], 1.25);
           const h = 3 + v * maxH;
           const x = x0 + slot * (i + 0.5) - barW / 2;
           this.addRoundRect(x - grow, midY - 2 - h - grow, barW + grow * 2, h + grow, Math.min(4, barW / 2 + grow));
@@ -453,7 +459,7 @@ export class Canvas2DRenderer {
       });
       g.beginPath();
       for (let i = from; i < to; i++) {
-        const v = Math.pow(bars[i], 1.15);
+        const v = Math.pow(bars[i], 1.25);
         const h = 3 + v * maxH;
         const x = x0 + slot * (i + 0.5) - barW / 2;
         this.addRoundRect(x, midY - 2 - h, barW, h, Math.min(3, barW / 2));
@@ -465,7 +471,7 @@ export class Canvas2DRenderer {
 
     g.beginPath();
     for (let i = 0; i < BARS; i++) {
-      const v = Math.pow(bars[i], 1.15);
+      const v = Math.pow(bars[i], 1.25);
       const h = 3 + v * maxH;
       const x = x0 + slot * (i + 0.5) - barW / 2;
       g.moveTo(x, midY - 2 - h);
@@ -481,16 +487,25 @@ export class Canvas2DRenderer {
     g.stroke();
 
     if (playing && wave) {
-      const amp = maxH * 0.56;
-      const step = usable / (wave.length - 1);
-      g.beginPath();
-      for (let i = 0; i < wave.length; i++) {
-        const v = (wave[i] - 128) / 128;
-        const x = x0 + i * step;
-        const y = midY - v * amp;
-        if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
-      }
+      const sw = smoothMirrorWave(this._mirror, wave, this._dt);
+      const amp = maxH * 0.34;
+      const N = sw.length;
+      const step = usable / (N - 1);
       const waveHue = hueOf(hueBase + 195);
+      const trace = (sign) => {
+        g.beginPath();
+        let px = x0, py = midY;
+        for (let i = 0; i < N; i++) {
+          const env = Math.sin((i / (N - 1)) * Math.PI);   // 两端收拢，避免边缘乱跳
+          const x = x0 + i * step;
+          const y = midY - sign * sw[i] * amp * env;
+          if (i === 0) g.moveTo(x, y);
+          else g.quadraticCurveTo(px, py, (px + x) / 2, (py + y) / 2);
+          px = x; py = y;
+        }
+        g.lineTo(px, py);
+      };
+      trace(1);
       g.strokeStyle = `hsla(${waveHue}, 100%, 62%, 0.12)`;
       g.lineWidth = 8;
       g.stroke();
@@ -501,13 +516,7 @@ export class Canvas2DRenderer {
       g.lineWidth = 1.8;
       g.stroke();
 
-      g.beginPath();
-      for (let i = 0; i < wave.length; i++) {
-        const v = (wave[i] - 128) / 128;
-        const x = x0 + i * step;
-        const y = midY + v * amp;
-        if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
-      }
+      trace(-1);
       g.globalAlpha = 0.35;
       g.strokeStyle = `hsla(${hueOf(hueBase + 280)}, 100%, 74%, 0.9)`;
       g.lineWidth = 1.2;
