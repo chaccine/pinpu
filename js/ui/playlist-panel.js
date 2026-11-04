@@ -7,7 +7,7 @@ import { setText, formatTime } from '../utils.js';
 
 const NOTE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l10-2v11"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="15" r="2.5"/></svg>';
 
-export function initPlaylistPanel({ playlist, toast, onChange }) {
+export function initPlaylistPanel({ playlist, toast, onChange, onLoadLyrics }) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'icon-btn';
@@ -16,6 +16,13 @@ export function initPlaylistPanel({ playlist, toast, onChange }) {
   btn.setAttribute('aria-label', '打开播放列表');
   btn.setAttribute('aria-expanded', 'false');
   btn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h11M4 12h11M4 18h7"/><path d="M17 14v6"/><circle cx="15.4" cy="20" r="1.8"/><path d="M17 14l4-1v5"/></svg>';
+
+  const lrcInput = document.createElement('input');
+  lrcInput.type = 'file';
+  lrcInput.accept = '.lrc,text/plain';
+  lrcInput.hidden = true;
+  lrcInput.id = 'lyricsInput';
+  lrcInput.setAttribute('aria-label', '选择歌词文件');
 
   const panel = document.createElement('aside');
   panel.className = 'playlist-panel ui';
@@ -28,6 +35,9 @@ export function initPlaylistPanel({ playlist, toast, onChange }) {
     + '<span class="pl-count" id="plCount">0 首</span>'
     + '<span class="pl-spacer"></span>'
     + '<button type="button" class="pl-tool pl-loop" id="btnLoop" title="播放模式"></button>'
+    + '<button type="button" class="pl-tool pl-lyrics" id="btnLyrics" title="加载歌词（.lrc）" aria-label="加载歌词文件">'
+    + '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v12H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg>'
+    + '<span>歌词</span></button>'
     + '<button type="button" class="pl-tool" id="btnClearList" title="清空列表" aria-label="清空列表">清空</button>'
     + '<button type="button" class="pl-tool" id="btnCloseList" title="关闭" aria-label="关闭播放列表">×</button>'
     + '</div>'
@@ -35,10 +45,12 @@ export function initPlaylistPanel({ playlist, toast, onChange }) {
     + '<p class="pl-empty" id="plEmpty">拖入音频文件或文件夹，或点击「本地音频」添加曲目</p>';
 
   document.body.appendChild(panel);
+  document.body.appendChild(lrcInput);
   const list = panel.querySelector('#plList');
   const empty = panel.querySelector('#plEmpty');
   const count = panel.querySelector('#plCount');
   const loopBtn = panel.querySelector('#btnLoop');
+  const lyricsBtn = panel.querySelector('#btnLyrics');
   const clearBtn = panel.querySelector('#btnClearList');
   const closeBtn = panel.querySelector('#btnCloseList');
 
@@ -184,6 +196,14 @@ export function initPlaylistPanel({ playlist, toast, onChange }) {
   loopBtn.addEventListener('click', () => {
     const m = playlist.cycleLoopMode();
     toast(`播放模式：${m.label}`);
+  });
+  lyricsBtn.addEventListener('click', () => {
+    lrcInput.value = '';
+    lrcInput.click();
+  });
+  lrcInput.addEventListener('change', () => {
+    const f = lrcInput.files && lrcInput.files[0];
+    if (f && typeof onLoadLyrics === 'function') onLoadLyrics(f);
   });
   clearBtn.addEventListener('click', () => {
     if (!playlist.items.length) { toast('列表已是空的'); return; }

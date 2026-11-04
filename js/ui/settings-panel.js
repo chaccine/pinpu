@@ -48,6 +48,8 @@ export function initSettingsPanel({ settings, onPatch, onReset, toast }) {
     + '<input type="range" id="spSmooth" min="0" max="0.9" step="0.05" value="0.4" aria-label="频谱平滑度"></div>'
     + '<div class="sp-row"><span class="sp-label">显示帧率</span>'
     + '<label class="sp-check"><input type="checkbox" id="spFps" aria-label="显示帧率"><span>FPS</span></label></div>'
+    + '<div class="sp-row"><span class="sp-label">显示歌词</span>'
+    + '<label class="sp-check"><input type="checkbox" id="spLyrics" aria-label="显示歌词"><span>歌词</span></label></div>'
     + '<div class="sp-row"><span class="sp-label">渲染器</span>'
     + segmented([{ id: 'auto', label: '自动' }, { id: '2d', label: '2D' }], settings.renderer, 'sp-renderer')
     + '</div>'
@@ -71,6 +73,7 @@ export function initSettingsPanel({ settings, onPatch, onReset, toast }) {
   const sens = panel.querySelector('#spSens');
   const smooth = panel.querySelector('#spSmooth');
   const fpsCheck = panel.querySelector('#spFps');
+  const lyricsCheck = panel.querySelector('#spLyrics');
   const qualityLabel = panel.querySelector('#spQuality');
   const engineLabel = panel.querySelector('#spEngine');
 
@@ -78,6 +81,7 @@ export function initSettingsPanel({ settings, onPatch, onReset, toast }) {
     sens.value = String(settings.sensitivity);
     smooth.value = String(settings.smoothing);
     fpsCheck.checked = !!settings.showFps;
+    lyricsCheck.checked = !!settings.showLyrics;
     panel.querySelector('#spSensVal').textContent = Number(settings.sensitivity).toFixed(2);
     panel.querySelector('#spSmoothVal').textContent = Number(settings.smoothing).toFixed(2);
     [['.sp-quality', settings.quality], ['.sp-bars', settings.barsLevel],
@@ -125,6 +129,9 @@ export function initSettingsPanel({ settings, onPatch, onReset, toast }) {
   fpsCheck.addEventListener('change', () => {
     onPatch('showFps', fpsCheck.checked);
     if (!fpsCheck.checked) fpsEl.hidden = true;
+  });
+  lyricsCheck.addEventListener('change', () => {
+    onPatch('showLyrics', lyricsCheck.checked);
   });
   panel.querySelector('#spReset').addEventListener('click', () => {
     onReset();

@@ -69,6 +69,7 @@ export class Playlist {
       added.push({
         file: f, name: f.name, title: '', artist: '', album: '',
         coverUrl: null, coverMime: '', parsed: false, duration: NaN, placeholder: false,
+        lyrics: '', embeddedLyrics: '',
       });
     }
     if (!added.length) return 0;
@@ -95,6 +96,7 @@ export class Playlist {
     this.items = names.map((name) => ({
       file: null, name: String(name), title: '', artist: '', album: '',
       coverUrl: null, coverMime: '', parsed: true, duration: NaN, placeholder: true,
+      lyrics: '', embeddedLyrics: '',
     }));
     this.index = -1;
     this._sync();
@@ -103,6 +105,15 @@ export class Playlist {
   }
 
   names() { return this.items.map((it) => it.name); }
+
+  // 按文件对象定位曲目并绑定 .lrc 文本（供拖放/按钮/__pinpu 使用）
+  setLyrics(file, text) {
+    const item = this.items.find((it) => it.file === file);
+    if (!item) return false;
+    item.lyrics = typeof text === 'string' ? text : '';
+    this._emit();
+    return true;
+  }
 
   // 预加载时长（列表显示用）：临时 Audio 只读元数据，读完即释放 objectURL
   _loadDuration(i) {
@@ -167,6 +178,7 @@ export class Playlist {
       item.title = tag.title || '';
       item.artist = tag.artist || '';
       item.album = tag.album || '';
+      item.embeddedLyrics = tag.lyrics || '';
       if (tag.picture && tag.picture.bytes && tag.picture.bytes.length) {
         if (item.coverUrl) URL.revokeObjectURL(item.coverUrl);
         try {

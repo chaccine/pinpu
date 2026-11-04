@@ -13,6 +13,9 @@ import { initThemePanel } from './ui/theme-panel.js';
 import { initPlaylistPanel } from './ui/playlist-panel.js';
 import { initHelpPanel } from './ui/help.js';
 import { initSettingsPanel } from './ui/settings-panel.js';
+import { initLyrics } from './ui/lyrics.js';
+import { initDrop } from './drop.js';
+import { readLrcFile, matchLrcFiles, isLrcFile } from './lyrics/source.js';
 import { ThemeController, applyThemeCSS, THEMES } from './theme.js';
 import { SHORTCUTS } from './shortcuts.js';
 import { settings, updateSettings, resetSettings, barsCountFor, DEFAULT_SETTINGS } from './settings.js';
@@ -24,6 +27,7 @@ const MODE_COUNT = 5;
 const features = {
   themes: true, fiveModes: true, playlist: true,
   id3: true, webgl: true, help: true, persist: true, settings: true, url: true,
+  lyrics: true,
 };
 
 // URL 分享参数（可选加分）：?mode=3&theme=sunset 优先于本地设置
@@ -62,6 +66,12 @@ engine.setBeatSensitivity(settings.sensitivity);
 const playlist = new Playlist(engine);
 const renderer = createRenderer(canvas, engine, { prefer2d: settings.renderer === '2d' });
 const toast = createToast($('#toast'));
+const lyrics = initLyrics({
+  getTime: () => engine.playhead,
+  getPlaying: () => getState().playing,
+  toast,
+  enabled: settings.showLyrics,
+});
 const autohide = createAutoHide();
 setState({ renderer: renderer.kind });
 
@@ -104,6 +114,7 @@ if (renderer.onKindChange) {
 // 节拍 → 渲染器粒子爆发/地形起伏
 engine.onBeat((energy) => {
   if (renderer.onBeat) renderer.onBeat(energy);
+  lyrics.onBeat(energy);
 });
 
 // 封面（律动封面环 + dock）跟随当前文件曲目
@@ -142,6 +153,7 @@ function applySetting(key, value) {
   else if (key === 'showFps' && !value && settingsPanel) {
     settingsPanel.setFps(0, renderer.kind, false);
   }
+  else if (key === 'showLyrics') lyrics.setEnabled(!!value);
 }
 
 function resetAllSettings() {
@@ -157,6 +169,7 @@ function resetAllSettings() {
   });
   engine.setVolume(DEFAULT_SETTINGS.volume);
   engine.setMuted(DEFAULT_SETTINGS.muted);
+  lyrics.setEnabled(DEFAULT_SETTINGS.showLyrics);
   playlist.setLoopMode(DEFAULT_SETTINGS.loopMode);
   qualityManager.setDensity(DEFAULT_SETTINGS.density);
   qualityManager.setMode(DEFAULT_SETTINGS.quality);
@@ -240,17 +253,34 @@ const actions = {
     const arr = Array.from(list || []).filter(Boolean);
     if (!arr.length) return;
     const audio = arr.filter((f) => engine.isAudioFile(f));
-    const skipped = arr.length - audio.length;
+    const lrcs = arr.filter((f) => isLrcFile(f));
+    const ignored = arr.length - audio.length - lrcs.length;
     const n = playlist.addFiles(audio);
-    if (n > 0) {
-      toast(skipped > 0
-        ? `已加入 ${n} 首曲目，忽略 ${skipped} 个非音频文件`
-        : `已加入 ${n} 首曲目`);
-    } else if (skipped > 0) {
+    const bound = lrcs.length ? await bindLyrics(audio, lrcs) : 0;
+    const parts = [];
+    if (n > 0) parts.push(`已加入 ${n} 首曲目`);
+    if (bound > 0) parts.push(`已绑定 ${bound} 份歌词`);
+    if (parts.length) {
+      if (ignored > 0) parts.push(lrcs.length ? `忽略 ${ignored} 个文件` : `忽略 ${ignored} 个非音频文件`);
+      toast(parts.join('，'));
+    } else if (lrcs.length) {
+      toast(playlist.current ? '未找到匹配的歌词' : '请先载入本地曲目');
+    } else if (ignored > 0) {
       toast('未找到可播放的音频文件');
     } else {
       toast('请选择音频文件');
     }
+  },
+  async loadLyricsFile(file) {
+    if (!isLrcFile(file)) { toast('请选择 .lrc 歌词文件'); return false; }
+    const cur = playlist.current;
+    if (!cur || !cur.file) { toast('请先播放本地曲目'); return false; }
+    const text = await readLrcFile(file);
+    if (!text) { toast('歌词文件读取失败'); return false; }
+    if (!lyrics.loadLrc(text)) { toast('未找到可同步的歌词行'); return false; }
+    playlist.setLyrics(cur.file, text);
+    toast('歌词已载入');
+    return true;
   },
   async startMic() {
     const res = await engine.startMic();
@@ -327,12 +357,32 @@ const actions = {
   },
 };
 
+// ---- 歌词绑定：拖入音频+同名 .lrc / 文件夹时按「同目录/同基名」配对 ----
+async function bindLyrics(audioFiles, lrcFiles) {
+  const pool = audioFiles.length
+    ? audioFiles
+    : playlist.items.map((it) => it.file).filter(Boolean);
+  let pairs = matchLrcFiles(pool, lrcFiles);
+  // 单独拖入一份歌词时无条件应用到当前曲目
+  if (!pairs.length && !audioFiles.length && lrcFiles.length === 1
+      && playlist.current && playlist.current.file) {
+    pairs = [{ audio: playlist.current.file, lrc: lrcFiles[0] }];
+  }
+  let bound = 0;
+  for (const { audio, lrc } of pairs) {
+    const text = await readLrcFile(lrc);
+    if (text && playlist.setLyrics(audio, text)) bound++;
+  }
+  return bound;
+}
+
 // ---- 装配 UI ----
 const dock = initDock({ engine, actions, autohide, playlist });
 const playlistPanel = initPlaylistPanel({
   playlist,
   toast,
   onChange: (open) => updateSettings({ playlistOpen: open }),
+  onLoadLyrics: (file) => actions.loadLyricsFile(file),
 });
 const helpPanel = initHelpPanel();
 initThemePanel({ setTheme: (id) => actions.setTheme(id) });
@@ -350,6 +400,20 @@ if (settings.playlistNames.length) {
   toast('已恢复上次播放列表，请重新添加文件后播放');
 }
 if (settings.playlistOpen) playlistPanel.toggle(true);
+
+// ---- 歌词随曲目同步：优先手动 .lrc，其次内嵌 USLT；切歌无歌词则清空 ----
+let lyricText = null;
+function syncLyrics() {
+  const cur = getState().source === 'file' ? playlist.current : null;
+  const text = cur ? (cur.lyrics || cur.embeddedLyrics || '') : '';
+  if (text === lyricText) return;
+  lyricText = text;
+  if (text) lyrics.loadLrc(text);
+  else lyrics.clear();
+}
+playlist.onChange(syncLyrics);
+subscribe('source', syncLyrics);
+subscribe('currentIndex', syncLyrics);
 
 // ---- 键盘：Esc 先处理浮层/沉浸，其余由统一配置表分发 ----
 window.addEventListener('keydown', (e) => {
@@ -372,81 +436,10 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// ---- 拖拽载入：多文件 + 文件夹递归（webkitGetAsEntry 降级为 files）----
-function readEntry(entry) {
-  if (!entry) return Promise.resolve([]);
-  if (entry.isFile) {
-    return new Promise((resolve) => {
-      entry.file((f) => resolve([f]), () => resolve([]));
-    });
-  }
-  if (entry.isDirectory) {
-    return new Promise((resolve) => {
-      const reader = entry.createReader();
-      const out = [];
-      const step = () => {
-        reader.readEntries(async (ents) => {
-          if (!ents.length) { resolve(out); return; }
-          for (const en of ents) {
-            out.push(...await readEntry(en));
-            if (out.length > 2000) break;
-          }
-          step();
-        }, () => resolve(out));
-      };
-      step();
-    });
-  }
-  return Promise.resolve([]);
-}
-
-async function collectDropped(dt) {
-  if (!dt) return [];
-  const entries = [];
-  if (dt.items && dt.items.length) {
-    for (const item of dt.items) {
-      if (item.kind !== 'file') continue;
-      const en = item.webkitGetAsEntry && item.webkitGetAsEntry();
-      if (en) entries.push(en);
-    }
-  }
-  if (entries.length) {
-    const files = [];
-    for (const en of entries) {
-      files.push(...await readEntry(en));
-      if (files.length > 2000) break;
-    }
-    return files;
-  }
-  return Array.from(dt.files || []);
-}
-
-let dragDepth = 0;
-const dropVeil = $('#dropVeil');
-const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files');
-
-window.addEventListener('dragenter', (e) => {
-  if (!hasFiles(e)) return;
-  e.preventDefault();
-  dragDepth++;
-  dropVeil.classList.add('show');
-});
-window.addEventListener('dragover', (e) => {
-  if (!hasFiles(e)) return;
-  e.preventDefault();
-  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-});
-window.addEventListener('dragleave', () => {
-  dragDepth = Math.max(0, dragDepth - 1);
-  if (dragDepth === 0) dropVeil.classList.remove('show');
-});
-window.addEventListener('drop', async (e) => {
-  e.preventDefault();
-  dragDepth = 0;
-  dropVeil.classList.remove('show');
-  let files = [];
-  try { files = await collectDropped(e.dataTransfer); } catch (err) { files = []; }
-  if (files.length) actions.handleFiles(files);
+// ---- 拖拽载入：多文件 + 文件夹递归（实现见 js/drop.js）----
+initDrop({
+  veil: $('#dropVeil'),
+  onFiles: (files) => actions.handleFiles(files),
 });
 
 // ---- 尺寸/方向/全屏变化 ----
@@ -496,6 +489,7 @@ function frame(ts) {
   themeCtrl.update(dt);
   renderer.render(dt);
   dock.updateTransport();
+  lyrics.update(engine.playhead);
 
   if (playing) {
     qualityAcc += dt;
@@ -551,6 +545,11 @@ function exposeDebugApi() {
     get quality() { return qualityManager.tier; },
     get webglLevel() { return renderer.level || 0; },
     get settings() { return Object.assign({}, settings); },
+    // 歌词只读状态 + 测试/调试入口
+    get lyricsLoaded() { return lyrics.isLoaded(); },
+    get lyricsLine() { return lyrics.currentText(); },
+    get lyricsLineIndex() { return lyrics.currentIndex(); },
+    get showLyrics() { return !!settings.showLyrics; },
     features,
     setMode: (i) => actions.setMode(i),
     setTheme: (id) => actions.setTheme(id),
@@ -558,6 +557,13 @@ function exposeDebugApi() {
     prev: () => actions.prev(),
     togglePlay: () => actions.togglePlay(),
     setLoopMode: (id) => { playlist.setLoopMode(id); return getState().loopMode; },
+    loadLyrics: (text) => lyrics.loadLrc(text),
+    clearLyrics: () => lyrics.clear(),
+    setShowLyrics: (v) => {
+      applySetting('showLyrics', !!v);
+      if (settingsPanel) settingsPanel.refresh();
+      return !!settings.showLyrics;
+    },
   };
   try {
     Object.defineProperty(window, '__pinpu', { value: api, configurable: true });

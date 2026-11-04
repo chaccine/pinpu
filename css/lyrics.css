@@ -1,0 +1,151 @@
+/* ===== 歌词覆盖层 ===== */
+/* 所有外观集中在 :root 变量：改字号/颜色/底部距离/辉光即可换风格。 */
+
+:root {
+  --lyric-font-size: 30px;
+  --lyric-next-size: 14px;
+  --lyric-color: var(--fg);
+  --lyric-next-color: var(--muted);
+  --lyric-glow-color: var(--accent);
+  --lyric-glow-strength: 55%;
+  --lyric-bottom: 250px;
+  --lyric-max-width: min(78vw, 880px);
+  --lyric-font-weight: 600;
+  --lyric-transition: 0.32s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.lyrics-overlay {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--lyric-bottom));
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(calc(100% - 36px), var(--lyric-max-width));
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  transition: opacity var(--lyric-transition);
+}
+
+.lyrics-overlay[hidden] {
+  display: none;
+}
+
+.lyric-line {
+  max-width: 100%;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.lyric-line.is-empty {
+  display: none;
+}
+
+.lyric-current {
+  color: var(--lyric-color);
+  font-size: var(--lyric-font-size);
+  font-weight: var(--lyric-font-weight);
+  letter-spacing: 0.03em;
+  /* 旧浏览器回退：不支持 color-mix 时仍有一层淡辉光 */
+  text-shadow: 0 0 10px var(--lyric-glow-color);
+  text-shadow:
+    0 0 calc(8px + var(--lyric-beat, 0) * 22px)
+      color-mix(in srgb, var(--lyric-glow-color) var(--lyric-glow-strength), transparent);
+  will-change: opacity, transform;
+}
+
+.lyric-current.is-in {
+  animation: lyric-rise var(--lyric-transition) both;
+}
+
+.lyric-next {
+  color: var(--lyric-next-color);
+  font-size: var(--lyric-next-size);
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  opacity: 0.72;
+}
+
+/* 播放列表头部的歌词按钮：图标风格与其它工具按钮一致 */
+.pl-lyrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pl-lyrics svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 节拍光晕：仅在后半拍短促增强，不做位移，避免干扰读词 */
+.lyrics-overlay.is-beat .lyric-current {
+  color: #fff;
+  text-shadow:
+    0 0 calc(14px + var(--lyric-beat, 0) * 30px)
+      color-mix(in srgb, var(--lyric-glow-color) var(--lyric-glow-strength), transparent),
+    0 0 2px color-mix(in srgb, var(--lyric-glow-color) 30%, transparent);
+}
+
+@keyframes lyric-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 手机 390x844：收紧字号并抬高，避免压住播放列表/设置面板与 dock */
+@media (max-width: 620px) {
+  :root {
+    --lyric-font-size: 22px;
+    --lyric-next-size: 12px;
+    --lyric-bottom: 236px;
+    --lyric-max-width: calc(100vw - 36px);
+  }
+
+  .lyrics-overlay {
+    gap: 6px;
+  }
+}
+
+/* 横屏手机：dock 变为两行，歌词同步下移 */
+@media (orientation: landscape) and (max-height: 820px) {
+  :root {
+    --lyric-font-size: 20px;
+    --lyric-next-size: 11px;
+    --lyric-bottom: 140px;
+  }
+}
+
+/* 极矮视口：进一步压缩，保证仍在 dock 上方 */
+@media (max-height: 560px) {
+  :root {
+    --lyric-font-size: 18px;
+    --lyric-next-size: 10.5px;
+    --lyric-bottom: 120px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --lyric-transition: 0.01s linear;
+  }
+
+  .lyric-current.is-in {
+    animation: none;
+  }
+}

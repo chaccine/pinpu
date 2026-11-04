@@ -25,6 +25,7 @@ export class AudioEngine {
     this.mediaSource = null;
     this.objectUrl = null;
     this.demo = null;
+    this.demoStart = 0;
     this.micNode = null;
     this.micStream = null;
     this.sourceToken = 0;
@@ -221,6 +222,7 @@ export class AudioEngine {
     if (token !== this.sourceToken) return false;
     this.demo = new DemoTrack(ac, this.inputGain);
     this.demo.start();
+    this.demoStart = ac.currentTime + 0.08; // 与 DemoTrack 首个排程点对齐
     setState({ source: 'demo', playing: true });
     this.resetAnalysis();
     this.resetHue(202);
@@ -339,6 +341,14 @@ export class AudioEngine {
   // ---- 走带 / 音量 ----
   get currentTime() { return this.audioEl.currentTime; }
   get duration() { return this.audioEl.duration; }
+
+  // 统一播放头：文件用 audio 时间，演示曲用 AudioContext 时钟（暂停时自然停走）
+  get playhead() {
+    if (getState().source === 'demo' && this.demo && this.audioCtx) {
+      return Math.max(0, this.audioCtx.currentTime - this.demoStart);
+    }
+    return this.audioEl.currentTime;
+  }
 
   // 已缓冲到的比例（取覆盖当前播放位置的最远缓冲段末端）
   get buffered() {

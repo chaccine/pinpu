@@ -62,6 +62,18 @@ def static_checks(rep):
     except Exception as e:
         rep.ok("ID3 Node单元测试(标题/歌手/封面/损坏容错)", False, str(e))
 
+    lrc_test = os.path.join(ROOT, "test", "lrc_node_test.mjs")
+    try:
+        r = subprocess.run(["node", lrc_test], cwd=ROOT, capture_output=True,
+                           text=True, timeout=60)
+        passes = r.stdout.count("[PASS]")
+        fails = r.stdout.count("[FAIL]")
+        rep.ok("LRC Node单元测试(时间戳/多标签/offset/排序/边界)",
+               r.returncode == 0 and fails == 0 and passes >= 20,
+               f"PASS={passes} FAIL={fails}")
+    except Exception as e:
+        rep.ok("LRC Node单元测试(时间戳/多标签/offset/排序/边界)", False, str(e))
+
 
 # ---------------------------------------------------------------------------
 # 基线 / 通用验收（v1 起即应通过，v2 持续保持）
@@ -294,6 +306,83 @@ async def v2_id3_checks(h):
     h.check("ID3v2.3封面", meta and meta.get("hasCover"), str(meta))
 
 
+async def v2_lyrics_checks(h):
+    page = h.page
+    await page.goto(BASE)
+    await page.wait_for_timeout(500)
+    if not await has_feature(page, "lyrics"):
+        h.skip("歌词同步", "features.lyrics 未启用")
+        return
+
+    base_errors = len(h.errors)
+    await page.click("#btnDemo")
+    await page.wait_for_timeout(700)
+    sample = os.path.join(FIX, "sample.lrc")
+    with open(sample, encoding="utf-8") as fh:
+        lrc = fh.read()
+    await page.evaluate("(t)=>window.__pinpu.loadLyrics(t)", lrc)
+    await page.wait_for_timeout(350)
+
+    st = await page.evaluate(
+        """()=>{const el=document.querySelector('#lyricsOverlay');
+        const cur=document.querySelector('#lyricCurrent');
+        return {visible:!!el && !el.hidden && getComputedStyle(el).display!=='none',
+          loaded:!!__pinpu.lyricsLoaded, line:__pinpu.lyricsLine,
+          dom:cur?cur.textContent:'', show:__pinpu.showLyrics};}"""
+    )
+    h.check("歌词覆盖层可见", st["visible"], str(st))
+    h.check("歌词已载入且当前行高亮", st["loaded"] and bool(st["line"])
+            and st["line"] == st["dom"], str(st))
+    h.check("显示歌词设置默认开启", st["show"] is True, str(st["show"]))
+
+    boxes = await page.evaluate(
+        """()=>{const o=document.querySelector('#lyricsOverlay');
+        const d=document.querySelector('#dock'); const t=document.querySelector('.topbar');
+        if(!o||!d||!t) return null;
+        const a=o.getBoundingClientRect(), b=d.getBoundingClientRect(), c=t.getBoundingClientRect();
+        return {top:Math.round(a.top),bottom:Math.round(a.bottom),
+          dockTop:Math.round(b.top),barBottom:Math.round(c.bottom)};}"""
+    )
+    h.check("歌词不与顶栏/dock重叠",
+            bool(boxes) and boxes["bottom"] <= boxes["dockTop"] + 1
+            and boxes["top"] >= boxes["barBottom"] - 1, str(boxes))
+
+    first = st["line"]
+    await page.wait_for_timeout(1900)
+    second = await page.evaluate("__pinpu.lyricsLine")
+    h.check("当前行随播放时间变化", bool(first) and bool(second) and second != first,
+            f"{first} -> {second}")
+
+    # 通过设置面板关闭「显示歌词」
+    await page.evaluate("document.querySelector('#btnSettings').click()")
+    await page.wait_for_timeout(300)
+    checked = await page.evaluate(
+        "document.querySelector('#spLyrics') ? document.querySelector('#spLyrics').checked : null")
+    h.check("设置面板含显示歌词开关", checked is True, str(checked))
+    await page.evaluate("document.querySelector('#spLyrics').click()")
+    await page.wait_for_timeout(350)
+    off = await page.evaluate(
+        """()=>{const el=document.querySelector('#lyricsOverlay');
+        return {hidden:el.hidden, display:getComputedStyle(el).display,
+          show:__pinpu.showLyrics, setting:__pinpu.settings.showLyrics};}"""
+    )
+    h.check("关闭设置后歌词隐藏",
+            off["hidden"] and off["display"] == "none"
+            and off["show"] is False and off["setting"] is False, str(off))
+
+    errs = [e for e in h.errors[base_errors:] if "favicon" not in e[1].lower()]
+    h.check("歌词用例无控制台error", len(errs) == 0, str(errs[:4]))
+
+    # 恢复开关，避免影响后续用例
+    await page.evaluate("__pinpu.setShowLyrics(true)")
+    await page.wait_for_timeout(250)
+    restored = await page.evaluate(
+        "!document.querySelector('#lyricsOverlay').hidden && __pinpu.showLyrics")
+    h.check("重新开启后歌词恢复", restored is True, str(restored))
+    await page.keyboard.press("Escape")
+    await page.wait_for_timeout(200)
+
+
 async def v2_renderer_checks(h):
     page = h.page
     if not await has_feature(page, "webgl"):
@@ -440,6 +529,7 @@ async def run_context(browser, is_mobile, rep):
     await v2_modes_checks(h)
     await v2_playlist_checks(h, is_mobile)
     await v2_id3_checks(h)
+    await v2_lyrics_checks(h)
     await v2_renderer_checks(h)
     await v2_persist_checks(h)
     await v2_shortcut_help(h)

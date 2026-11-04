@@ -1,4 +1,4 @@
-/* 手写音频标签解析器：ID3v2.2/2.3/2.4（TIT2/TPE1/TALB/APIC 及 v2.2 的 TT2/TP1/TAL/PIC）， */
+/* 手写音频标签解析器：ID3v2.2/2.3/2.4（TIT2/TPE1/TALB/APIC/USLT 及 v2.2 的 TT2/TP1/TAL/PIC/ULT）， */
 /* 支持 4 种文本编码、同步安全整数、扩展头、整体/帧级去同步化；另附 FLAC（Vorbis Comment + PICTURE）。 */
 /* 仅用 file.slice 读取标签区间，不整文件载入；任何异常都返回 null/部分结果，绝不抛出。 */
 
@@ -74,12 +74,24 @@ function readPicture(tag, payload, encoding, isV2) {
   if (bytes.length > 0) tag.picture = { mime, bytes };
 }
 
+// USLT/ULT：编码(1) + 语言(3) + 内容描述(终止符) + 歌词正文
+function readLyrics(tag, payload, encoding) {
+  if (payload.length < 5) return;
+  let p = 4;
+  const descEnd = findTerm(payload, p, encoding);
+  p = descEnd + (encoding === 1 || encoding === 2 ? 2 : 1);
+  if (p >= payload.length) return;
+  const text = decodeText(payload.subarray(p), encoding);
+  if (text && !tag.lyrics) tag.lyrics = text;
+}
+
 function handleFrame(tag, id, payload, major) {
   if (payload.length === 0) return;
   const enc = payload[0];
   if (id === 'TIT2' || id === 'TT2') tag.title = decodeText(payload.subarray(1), enc);
   else if (id === 'TPE1' || id === 'TP1') tag.artist = decodeText(payload.subarray(1), enc);
   else if (id === 'TALB' || id === 'TAL') tag.album = decodeText(payload.subarray(1), enc);
+  else if (id === 'USLT' || id === 'ULT') readLyrics(tag, payload, enc);
   else if (id === 'APIC') readPicture(tag, payload, enc, false);
   else if (id === 'PIC') readPicture(tag, payload, enc, true);
 }
@@ -97,7 +109,7 @@ export async function parseID3(file) {
     const body = new Uint8Array(await file.slice(10, 10 + size).arrayBuffer());
     const data = (flags & 0x80) ? deunsync(body) : body;
 
-    const tag = { title: '', artist: '', album: '', picture: null };
+    const tag = { title: '', artist: '', album: '', picture: null, lyrics: '' };
     let off = 0;
 
     // 扩展头：v3 的 size 不含自身 4 字节；v4 的 size 含自身
@@ -145,7 +157,7 @@ export async function parseFLAC(file) {
   try {
     const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
     if (ascii(head, 0, 4) !== 'fLaC') return null;
-    const tag = { title: '', artist: '', album: '', picture: null };
+    const tag = { title: '', artist: '', album: '', picture: null, lyrics: '' };
     let off = 4;
     for (let guard = 0; guard < 64; guard++) {
       const hb = new Uint8Array(await file.slice(off, off + 4).arrayBuffer());
